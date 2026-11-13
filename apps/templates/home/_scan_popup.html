@@ -1,0 +1,209 @@
+{# Popup Hasil Scan (dipakai di dashboard). Data: scan_run, scan_data dari routes._scan_popup_context #}
+{% if scan_run %}
+{% set c = scan_data.counts or {} %}
+{% set multi = scan_data.multi_site %}
+{% set can_fix = current_user.can_edit_daily_report %}
+{% set sections = [
+    ('ctp', 'CTP', 'Online tapi snapshot gagal (Online tanpa foto)', scan_data.ctp or [], 'cam'),
+    ('nodata', 'NO DATA', 'Channel tidak ditemukan di daftar NVR', scan_data.nodata or [], 'cam'),
+    ('nvrgagal', 'NVR Tidak Bisa Dicek', 'Daftar channel NVR tidak bisa diambil; semua kameranya ikut tidak bisa dicek', scan_data.nvr_gagal or [], 'nvr'),
+    ('hddgagal', 'HDD Gagal Cek', 'Data storage NVR tidak bisa diambil', scan_data.hdd_gagal or [], 'nvr'),
+    ('hddunknown', 'Status HDD Tidak Dikenal', 'Status slot HDD yang belum dikenal SMC (tidak membuat tiket)', scan_data.hdd_unknown or [], 'hdd'),
+] %}
+{% set total_issue = (scan_data.ctp or [])|length + (scan_data.nodata or [])|length + (scan_data.nvr_gagal or [])|length
+                     + (scan_data.hdd_gagal or [])|length + (scan_data.hdd_unknown or [])|length %}
+<style>
+#scanResultModal .scan-row { display: flex; align-items: center; padding: 10px 14px; border-bottom: 1px solid #eef1f5; }
+#scanResultModal .scan-row .lbl { font-weight: 600; color: #0D2A4A; }
+#scanResultModal .scan-row .desc { font-size: 12px; color: #6c757d; }
+#scanResultModal .scan-row .cnt { font-size: 18px; font-weight: 700; min-width: 48px; text-align: right; margin-right: 10px; color: #1565C0; }
+#scanResultModal .scan-row .cnt.zero { color: #adb5bd; }
+#scanResultModal .scan-toggle { width: 34px; height: 34px; padding: 0; border-radius: 50%;
+    display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; }
+#scanResultModal .scan-toggle i { margin: 0 !important; line-height: 1; }
+#scanResultModal .scan-sites { font-size: 13px; color: #0D2A4A; }
+#scanResultModal .scan-sites .badge { font-size: 12px; font-weight: 600; margin: 0 4px 4px 0; background: #E3F2FD; color: #1565C0; }
+#scanResultModal .scan-detail { background: #f8fafd; padding: 8px 14px 12px; border-bottom: 1px solid #eef1f5; max-height: 260px; overflow: auto; }
+#scanResultModal .scan-detail table { font-size: 12px; margin: 0; background: #fff; }
+#scanResultModal .scan-detail th, #scanResultModal .scan-detail td { padding: 4px 8px !important; vertical-align: middle; }
+#scanResultModal .scan-sum span { display: inline-block; margin: 0 10px 4px 0; font-size: 13px; }
+#scanResultModal .ctp-edit { padding: 2px 8px; color: #000; }
+#scanResultModal .ctp-edit i { margin: 0 !important; color: #000; }
+#scanResultModal .ctp-fix-row td { background: #F5F9FF; }
+#scanResultModal .ctp-fix-form select, #scanResultModal .ctp-fix-form input[type=file] { font-size: 12px; }
+#scanResultModal .scan-fixed { font-size: 12px; color: #6c757d; margin-right: 8px; }
+</style>
+<div class="modal fade" id="scanResultModal" tabindex="-1" role="dialog" aria-hidden="true" data-run-id="{{ scan_run.id }}">
+  <div class="modal-dialog modal-lg modal-dialog-scrollable" role="document">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-0">Hasil Scan</h5>
+          <small class="text-muted">{{ scan_run.scope }} · {{ scan_run.finished_at.strftime('%d %b %Y %H:%M') if scan_run.finished_at else '-' }}</small>
+        </div>
+        <button type="button" class="close" data-dismiss="modal" aria-label="Tutup"><span aria-hidden="true">&times;</span></button>
+      </div>
+      <div class="modal-body p-0">
+        {% if scan_data.sites %}
+        <div class="scan-sites px-3 pt-3">
+          <span class="mr-1">Site di-scan ({{ scan_data.sites|length }}):</span>
+          {% for s in scan_data.sites %}<span class="badge">{{ s }}</span>{% endfor %}
+        </div>
+        {% endif %}
+        <div class="scan-sum px-3 pt-2 pb-2">
+          <span>Online: <b>{{ c.online or 0 }}</b></span>
+          <span>Offline: <b>{{ c.offline or 0 }}</b></span>
+          <span>Available: <b>{{ c.available or 0 }}</b></span>
+          <span>NVR terbaca: <b>{{ c.nvr_ok or 0 }}</b> / {{ (c.nvr_ok or 0) + (c.nvr_gagal or 0) }}</span>
+        </div>
+        <div id="scan-fix-msg" class="alert alert-success mx-3 py-2 small" style="display:none"></div>
+        {% if total_issue == 0 %}
+          <div class="alert alert-success mx-3">Tidak ada CTP, NO DATA, maupun NVR yang tidak bisa dicek pada scan ini.</div>
+        {% endif %}
+
+        {% for key, label, desc, items, kind in sections %}
+        {% if items or key in ('ctp', 'nodata', 'nvrgagal') %}
+        <div class="scan-row">
+          <div class="flex-grow-1">
+            <div class="lbl">{{ label }}</div>
+            <div class="desc">{{ desc }}</div>
+          </div>
+          {% set open_items = items|rejectattr('fixed')|list %}
+          {% set fixed_n = items|length - open_items|length %}
+          <span class="scan-fixed" id="scan-fixed-{{ key }}">{% if fixed_n %}{{ fixed_n }} sudah diperbaiki{% endif %}</span>
+          <div class="cnt {% if not open_items %}zero{% endif %}" id="scan-cnt-{{ key }}">{{ open_items|length }}</div>
+          <button type="button" class="btn btn-outline-primary scan-toggle" data-toggle="collapse" data-target="#scan-detail-{{ key }}"
+                  title="Lihat detail" {% if not items %}disabled{% endif %}>
+            <i class="feather icon-eye"></i>
+          </button>
+        </div>
+        {% if items %}
+        <div class="collapse scan-detail" id="scan-detail-{{ key }}">
+          <table class="table table-sm table-bordered">
+            <thead class="thead-light">
+              <tr>
+                {% if multi %}<th>Site</th>{% endif %}
+                <th>NVR</th>
+                {% if kind == 'cam' %}<th class="text-center">CH</th><th>Kamera</th>{% if key == 'ctp' and can_fix %}<th class="text-center">Perbaiki</th>{% endif %}
+                {% elif kind == 'nvr' %}<th>IP</th>{% if key == 'nvrgagal' %}<th class="text-center">Kamera terdampak</th>{% endif %}<th>Alasan</th>
+                {% else %}<th class="text-center">Slot</th><th>Status</th>{% endif %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for x in items %}
+              <tr>
+                {% if multi %}<td>{{ x.site }}</td>{% endif %}
+                <td>{{ x.nvr }}</td>
+                {% if kind == 'cam' %}<td class="text-center">{{ x.channel }}</td><td>{{ x.camera }}</td>
+                  {% if key == 'ctp' and can_fix %}
+                  <td class="text-center" id="ctp-action-{{ x.camera_id }}">
+                    {% if x.fixed %}<span class="badge badge-success">&#10003; {{ x.fixed }}</span>
+                    {% elif x.camera_id %}<button type="button" class="btn btn-sm btn-light ctp-edit" data-cam="{{ x.camera_id }}" title="Perbaiki status kamera ini"><i class="feather icon-edit-2"></i></button>
+                    {% else %}-{% endif %}
+                  </td>
+                  {% endif %}
+                {% elif kind == 'nvr' %}<td>{{ x.ip }}</td>{% if key == 'nvrgagal' %}<td class="text-center">{{ x.cams if x.cams is defined else '-' }}</td>{% endif %}<td>{{ x.reason }}</td>
+                {% else %}<td class="text-center">{{ x.slot }}</td><td>{{ x.status }}</td>{% endif %}
+              </tr>
+              {% if key == 'ctp' and can_fix and x.camera_id and not x.fixed %}
+              <tr class="ctp-fix-row" id="ctp-fix-{{ x.camera_id }}" style="display:none">
+                <td colspan="{{ 5 if multi else 4 }}">
+                  <form class="ctp-fix-form d-flex flex-wrap align-items-center" data-cam="{{ x.camera_id }}">
+                    <input type="hidden" name="camera_id" value="{{ x.camera_id }}">
+                    <select name="new_status" class="form-control form-control-sm ctp-status mr-2 mb-1" style="width:auto">
+                      <option value="Online">Online (upload foto)</option>
+                      <option value="Offline">Offline</option>
+                      <option value="Available">Available</option>
+                    </select>
+                    <span class="ctp-file-wrap mr-2 mb-1"><input type="file" name="screenshot_file" accept="image/*" class="form-control-file"></span>
+                    <button type="submit" class="btn btn-primary btn-sm mr-1 mb-1">Simpan</button>
+                    <button type="button" class="btn btn-light btn-sm ctp-cancel mb-1">Batal</button>
+                    <span class="ctp-msg small text-danger ml-2"></span>
+                  </form>
+                </td>
+              </tr>
+              {% endif %}
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        {% endif %}
+        {% endif %}
+        {% endfor %}
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn btn-primary btn-sm" data-dismiss="modal">Tutup</button>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+// Perbaiki kamera CTP langsung dari popup (tanpa reload). Vanilla JS: tidak bergantung pada versi jQuery.
+(function () {
+    var modal = document.getElementById('scanResultModal');
+    if (!modal) return;
+    var anyFixed = false;
+    modal.addEventListener('click', function (e) {
+        var edit = e.target.closest('.ctp-edit');
+        if (edit) {
+            var row = document.getElementById('ctp-fix-' + edit.getAttribute('data-cam'));
+            row.style.display = row.style.display === 'none' ? '' : 'none';
+            return;
+        }
+        var cancel = e.target.closest('.ctp-cancel');
+        if (cancel) { cancel.closest('tr').style.display = 'none'; return; }
+        // Tutup popup setelah ada perbaikan -> muat ulang dashboard supaya statusnya ikut baru
+        if (anyFixed && e.target.closest('[data-dismiss="modal"]')) { window.location.reload(); }
+    });
+    modal.addEventListener('change', function (e) {
+        if (e.target.classList.contains('ctp-status')) {
+            var wrap = e.target.closest('form').querySelector('.ctp-file-wrap');
+            wrap.style.display = e.target.value === 'Online' ? '' : 'none';
+        }
+    });
+    modal.addEventListener('submit', function (e) {
+        var form = e.target.closest('.ctp-fix-form');
+        if (!form) return;
+        e.preventDefault();
+        var msg = form.querySelector('.ctp-msg');
+        var fd = new FormData(form);
+        fd.append('run_id', modal.getAttribute('data-run-id'));
+        var fileInput = form.querySelector('input[type=file]');
+        if (fd.get('new_status') === 'Online' && !fileInput.files.length) {
+            msg.textContent = 'Pilih foto dulu (Online tanpa foto tetap dihitung CTP).';
+            return;
+        }
+        var btn = form.querySelector('button[type=submit]');
+        btn.disabled = true; btn.textContent = 'Menyimpan...'; msg.textContent = '';
+        fetch("{{ url_for('home_blueprint.scan_fix_camera') }}", {
+            method: 'POST', body: fd, headers: { 'X-Requested-With': 'XMLHttpRequest' }
+        }).then(function (r) { return r.json(); }).then(function (res) {
+            if (!res.ok) { msg.textContent = res.message || 'Gagal menyimpan.'; return; }
+            anyFixed = true;
+            var cam = form.getAttribute('data-cam');
+            var cell = document.getElementById('ctp-action-' + cam);
+            cell.innerHTML = '';
+            var badge = document.createElement('span');
+            badge.className = 'badge badge-success';
+            badge.textContent = '\u2713 ' + res.label;
+            cell.appendChild(badge);
+            document.getElementById('ctp-fix-' + cam).style.display = 'none';
+            var cnt = document.getElementById('scan-cnt-ctp');
+            var n = Math.max(0, parseInt(cnt.textContent, 10) - 1);
+            cnt.textContent = n;
+            if (n === 0) cnt.classList.add('zero');
+            var fixedEl = document.getElementById('scan-fixed-ctp');
+            var done = (parseInt(fixedEl.textContent, 10) || 0) + 1;
+            fixedEl.textContent = done + ' sudah diperbaiki';
+            var info = document.getElementById('scan-fix-msg');
+            info.textContent = res.message;
+            info.style.display = '';
+        }).catch(function () {
+            msg.textContent = 'Gagal terhubung ke server.';
+        }).finally(function () {
+            btn.disabled = false; btn.textContent = 'Simpan';
+        });
+    });
+})();
+</script>
+{% endif %}

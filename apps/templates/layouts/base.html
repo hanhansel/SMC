@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <title>
+        SMC - {% block title %}{% endblock %}
+    </title>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=0, minimal-ui">
+    <meta http-equiv="X-UA-Compatible" content="IE=edge"/>
+    <meta name="description" content="SMC - Sistem Monitor CCTV"/>
+
+    <link rel="icon" href="{{ config.ASSETS_ROOT }}/images/favicon.ico" type="image/x-icon">
+    <link rel="stylesheet" href="{{ config.ASSETS_ROOT }}/fonts/fontawesome/css/fontawesome-all.min.css">
+    <link rel="stylesheet" href="{{ config.ASSETS_ROOT }}/plugins/animation/css/animate.min.css">
+    <link rel="stylesheet" href="{{ config.ASSETS_ROOT }}/css/style.css">
+    <link rel="stylesheet" href="{{ config.ASSETS_ROOT }}/css/dark.css">
+
+    {% block stylesheets %}{% endblock stylesheets %}
+
+</head>
+<body>
+
+    <div class="loader-bg">
+        <div class="loader-track">
+            <div class="loader-fill"></div>
+        </div>
+    </div>
+    {% include 'includes/sidebar.html' %}
+
+    {% include 'includes/navigation.html' %}
+
+
+    <div class="pcoded-main-container">
+        <div class="pcoded-wrapper">
+            <div class="pcoded-content">
+                <div class="pcoded-inner-content">
+                    {% block content %}{% endblock content %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+
+    {% include 'includes/scripts.html' %}
+
+    {% block javascripts %}
+    
+    <script>
+        function checkSystemStatus() {
+            fetch('/api/latest_status')
+                .then(response => response.json())
+                .then(data => {
+                    const statusMap = data.status_map;
+                    let errorCount = 0;
+                    let notifHtml = '';
+
+                    // Looping semua perangkat untuk cari yang bermasalah
+                    for (const camId in statusMap) {
+                        const device = statusMap[camId];
+                        const statusLower = device.status.toLowerCase();
+                        
+                        // Selain Normal/Online dianggap peringatan
+                        if (statusLower.includes('offline') || statusLower.includes('error')) {
+                            errorCount++;
+                            
+                            // Hitung Ticket Warning
+                            let warningBadge = '';
+                            let warningText = '';
+                            
+                            if (device.last_online) {
+                                const lastOnlineDate = new Date(device.last_online);
+                                const today = new Date();
+                                const diffTime = Math.abs(today - lastOnlineDate);
+                                const diffDays = Math.ceil(diffTime / (1000 * 60 * 60 * 24)); // Konversi ke hari
+                                
+                                if (diffDays > 45) { // Lebih dari 1.5 bulan
+                                    warningBadge = '<span class="badge badge-danger float-right">Hard Warning</span>';
+                                    warningText = `<br><small class="text-danger">Mati sejak: <strong>${diffDays} hari</strong> lalu (Butuh ticket segera!)</small>`;
+                                } else if (diffDays > 14) { // Lebih dari 2 minggu
+                                    warningBadge = '<span class="badge badge-warning float-right text-dark">Soft Warning</span>';
+                                    warningText = `<br><small class="text-warning">Mati sejak: ${diffDays} hari lalu</small>`;
+                                } else { // Baru mati
+                                    warningText = `<br><small class="text-muted">Mati sejak: ${diffDays} hari lalu</small>`;
+                                }
+                            } else {
+                                warningText = `<br><small class="text-muted">Belum ada data last_online</small>`;
+                            }
+
+                            notifHtml += `
+                                <li class="notification" style="padding: 15px 20px; border-bottom: 1px solid #f1f1f1;">
+                                    <div class="media">
+                                        <div class="media-body">
+                                            ${warningBadge}
+                                            <p style="margin-bottom: 2px;"><strong>${device.site_name}</strong> - ${device.name}</p>
+                                            <p class="text-muted" style="font-size: 11px; margin-bottom: 5px;">IP: ${device.ip_address}</p>
+                                            <p style="margin-bottom: 0; font-size: 13px;">Status: <span class="text-danger font-weight-bold">${device.status}</span> ${warningText}</p>
+                                        </div>
+                                    </div>
+                                </li>
+                            `;
+                        }
+                    }
+
+                    // Update UI Badge (Icon Bel)
+                    const badge = document.getElementById('notification-badge');
+                    if (errorCount > 0) {
+                        badge.textContent = errorCount;
+                        badge.style.display = 'inline-block';
+                    } else {
+                        badge.style.display = 'none';
+                        notifHtml = `
+                            <li class="n-title" style="padding: 15px 20px; text-align: center;">
+                                <p class="m-b-0 text-success"><i class="feather icon-check-circle"></i> Semua sistem berjalan normal</p>
+                            </li>
+                        `;
+                    }
+
+                    // Update isi dropdown
+                    document.getElementById('notification-list').innerHTML = notifHtml;
+                })
+                .catch(error => console.error('Error memuat notifikasi:', error));
+        }
+
+        // Jalankan saat halaman pertama kali di-load
+        checkSystemStatus();
+        
+        // Cek secara berkala setiap 30 detik (30000 ms)
+        setInterval(checkSystemStatus, 30000);
+    </script>
+    {% endblock javascripts %}
+
+</body>
+</html>

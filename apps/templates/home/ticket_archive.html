@@ -1,0 +1,167 @@
+{% extends "layouts/base.html" %}
+{% block title %}Ticket Archive{% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    
+    
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="close" data-dismiss="alert">&times;</button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="card shadow-sm mb-4">
+        <div class="card-body p-3">
+            <form method="GET" action="{{ url_for('home_blueprint.ticket_archive') }}" class="row align-items-end">
+                <div class="col-md-3 mb-2">
+                    <label class="font-weight-bold small">Pilih Site</label>
+                    <select name="site_id" class="form-control form-control-sm" onchange="this.form.submit()">
+                        <option value="">Semua Site</option>
+                        {% for site in sites %}
+                            <option value="{{ site.id }}" {% if selected_site == site.id|string %}selected{% endif %}>{{ site.name }}</option>
+                        {% endfor %}
+                    </select>
+                </div>
+                <div class="col-md-3 mb-2">
+                    <label class="font-weight-bold small">Bulan Diselesaikan</label>
+                    <input type="month" name="month" class="form-control form-control-sm" value="{{ selected_month or '' }}" onchange="this.form.submit()">
+                </div>
+
+                <div class="col-md-3 mb-2">
+                    <label class="font-weight-bold small">Cari No. Ticket</label>
+                    <input type="text" name="ticket_number" class="form-control form-control-sm" placeholder="Contoh: 34" value="{{ selected_ticket }}" onchange="this.form.submit()">
+                </div>
+            </form>
+        </div>
+    </div>
+
+    <form method="POST" action="{{ url_for('home_blueprint.bulk_delete_ticket_log') }}">
+        <div class="card shadow-sm mb-4 border-left-success">
+            <div class="card-header bg-white d-flex justify-content-between align-items-center py-2">
+                <h5 class="m-0 font-weight-bold text-success">Riwayat Histori ({{ resolved_ticket|length }})</h5>
+                
+                {% if current_user.can_manage_users %}
+                <button type="submit" class="btn btn-sm btn-danger font-weight-bold" onclick="return confirm('Hapus permanen log yang dipilih dari database?');">
+                    <i class="feather icon-trash-2"></i> Hapus Terpilih
+                </button>
+                {% endif %}
+            </div>
+
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-hover table-bordered m-0 text-center align-middle" id="table-arsip">
+                        <thead class="thead-light">
+                            <tr>
+                                {% if current_user.can_manage_users %}
+                                <th style="width: 5%"><input type="checkbox" id="selectAllArchive"></th>
+                                {% endif %}
+                                <th style="width: 15%">Tgl Diselesaikan</th>
+                                <th style="width: 35%" class="text-left">Perangkat Terdampak</th>
+                                <th style="width: 15%">No. Ticket</th>
+                                <th style="width: 15%">Status</th>
+                                <th style="width: 15%">Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for log in resolved_ticket %}
+                                <tr>
+                                    {% if current_user.can_manage_users %}
+                                    <td><input type="checkbox" class="ticket-checkbox" name="ticket_ids" value="{{ log.id }}"></td>
+                                    {% endif %}
+                                    <td>{{ log.resolved_at.strftime('%d-%b-%Y %H:%M') if log.resolved_at else '-' }}</td>
+                                    <td class="text-left">
+                                        {% set parent_nvr = nvr_dict.get(log.camera.ip_address) %}
+                                        {% set nvr_name_str = parent_nvr.name if parent_nvr else "UNKNOWN_NVR" %}
+                                        {% if log.issue_type == 'HDD Error' %}
+                                            <span class="badge badge-danger">[HDD ERROR]</span> <span class="font-weight-bold">{{ log.camera.site.name }}</span><br><small class="text-muted">{{ nvr_name_str }}</small>
+                                        {% elif log.camera.channel == 0 %}
+                                            <span class="badge badge-dark">[NVR DOWN]</span> <span class="font-weight-bold">{{ log.camera.site.name }}</span><br><small class="text-muted">{{ nvr_name_str }}</small>
+                                        {% else %}
+                                            <span class="badge badge-primary">[KAMERA]</span> <span class="font-weight-bold">{{ log.camera.site.name }}</span><br><small class="text-muted">{{ camera_display_name(nvr_name_str, log.camera.name, log.camera.channel, model=log.camera.model) }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td class="font-weight-bold text-primary">{{ log.ticket_number or '-' }}</td>
+                                    <td><span class="badge badge-success"><i class="feather icon-archive"></i> Archived</span></td>
+                                    <td>
+                                        <button type="button" class="btn btn-sm btn-info open-log-modal" 
+                                            data-site="{{ log.camera.site.name }}" data-cam="{{ camera_display_name(nvr_name_str, log.camera.name, log.camera.channel, model=log.camera.model) if log.camera.channel > 0 else nvr_name_str ~ ' (' ~ log.issue_type ~ ')' }}" 
+                                            data-ticket="{{ log.ticket_number or '-' }}" data-masalah="{{ log.masalah or '-' }}" 
+                                            data-perbaikan="{{ log.perbaikan or '-' }}">
+                                            <i class="feather icon-file-text"></i> Detail Log
+                                        </button>
+                                    </td>
+                                </tr>
+                            {% else %}
+                                <tr>
+                                    <td colspan="{% if current_user.can_manage_users %}6{% else %}5{% endif %}" class="text-center text-muted py-4">Belum ada arsip log yang terselesaikan sesuai filter.</td>
+                                </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+<div class="modal fade" id="detailLogModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header bg-info text-white">
+                <h5 class="modal-title text-white"><i class="feather icon-file-text"></i> Detail Riwayat Ticket</h5>
+                <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body p-4">
+                <p><strong>Site:</strong> <span id="detail_site"></span></p>
+                <p><strong>Perangkat:</strong> <span id="detail_cam"></span></p>
+                <hr>
+                <p><strong>No. Ticket:</strong> <span id="detail_ticket" class="text-primary font-weight-bold"></span></p>
+                <div class="form-group">
+                    <label class="font-weight-bold text-muted">Akar Masalah:</label>
+                    <textarea id="detail_masalah" class="form-control bg-light text-dark" rows="3" readonly></textarea>
+                </div>
+                <div class="form-group">
+                    <label class="font-weight-bold text-muted">Tindakan Perbaikan:</label>
+                    <textarea id="detail_perbaikan" class="form-control bg-light text-dark" rows="3" readonly></textarea>
+                </div>
+            </div>
+            <div class="modal-footer">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Tutup</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Logika Checkbox Select All untuk Archive
+    const selectAllBtn = document.getElementById('selectAllArchive');
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('change', function() {
+            document.querySelectorAll('.ticket-checkbox').forEach(cb => {
+                cb.checked = selectAllBtn.checked;
+            });
+        });
+    }
+
+    // Logika Modal Detail Log
+    document.querySelectorAll('.open-log-modal').forEach(btn => {
+        btn.addEventListener('click', function() {
+            document.getElementById('detail_site').innerText = this.getAttribute('data-site');
+            document.getElementById('detail_cam').innerText = this.getAttribute('data-cam');
+            document.getElementById('detail_ticket').innerText = this.getAttribute('data-ticket') || '-';
+            document.getElementById('detail_masalah').value = this.getAttribute('data-masalah');
+            document.getElementById('detail_perbaikan').value = this.getAttribute('data-perbaikan');
+            $('#detailLogModal').modal('show');
+        });
+    });
+});
+</script>
+{% endblock %}

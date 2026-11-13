@@ -1,0 +1,589 @@
+{% extends "layouts/base.html" %}
+{% block title %}Weekly Report{% endblock %}
+
+{% block content %}
+<style>
+/* =====================================================
+STYLE KHUSUS WEEKLY REPORT
+===================================================== */
+.table-weekly {
+    min-width: 100%;
+    /* Border terpisah agar kolom sticky tidak bergeser saat di-scroll */
+    border-collapse: separate !important; 
+    border-spacing: 0;
+    background: white;
+    border-top: 1px solid #ccc;
+    border-left: 1px solid #ccc;
+}
+
+.table-weekly th, .table-weekly td {
+    border-bottom: 1px solid #ccc;
+    border-right: 1px solid #ccc;
+    padding: 6px;
+    text-align: center;
+    white-space: nowrap; 
+    vertical-align: middle;
+    background-clip: padding-box; /* Teks tidak terlihat di celah border */
+}
+
+.table-weekly th {
+    background: #007bff;
+    color: white;
+    font-weight: bold;
+}
+
+/* Styling Status */
+.status-normal, .status-online { background: #92D050; }
+.status-offline { background: #FF0000; color: white; }
+.status-abnormal, .status-unknown, .status-abnormal-kamera { background: #FFFF00; }
+.status-nodata { background: #D9D9D9; color: #595959; }
+.status-available { background: #5B9BD5; color: #000; }
+
+/* Sel status di tabel weekly — warna sama persis dengan Export Excel (lihat apps/home/report_status.py) */
+.table-weekly td.status-online { background-color: #92D050; color: #000; }
+.table-weekly td.status-offline { background-color: #FF0000; color: #000; font-weight: bold; }
+.table-weekly td.status-available { background-color: #5B9BD5; color: #000; }
+.table-weekly td.status-nodata { background-color: #D9D9D9; color: #595959; }
+.table-weekly td.status-uncheckable { background-color: #FFC000; color: #000; font-weight: bold; }
+/* Notifikasi kecil setelah revisi (tanpa reload halaman) */
+#override-toast { position: fixed; right: 20px; bottom: 20px; z-index: 2000; display: none; max-width: 360px; }
+
+/* Style untuk sel screenshot */
+.table-weekly .screenshot-cell {
+    width: 100px;
+    min-width: 100px;
+    padding: 3px;
+    white-space: normal;
+}
+
+/* Thumbnail screenshot */
+.thumbnail-img {
+    max-width: 80px; 
+    height: auto; 
+    border: 1px solid #ddd;
+    transition: transform 0.2s;
+    cursor: pointer;
+}
+.thumbnail-img:hover {
+    transform: scale(1.03);
+}
+
+/* Preview overlay di atas halaman */
+#imagePreviewOverlay {
+    display: none;
+    position: fixed;
+    top:0; left:0; width:100%; height:100%;
+    background: rgba(0,0,0,0.8);
+    justify-content: center; align-items: center;
+    z-index: 1000;
+}
+#imagePreviewOverlay img {
+    max-width: 90%; max-height: 90%;
+    border: 3px solid white; box-shadow: 0 0 15px black;
+}
+#closePreview {
+    position: absolute; top: 20px; right: 30px;
+    color: white; font-size: 30px; cursor: pointer;
+}
+
+/* ================================================================= */
+/* STICKY BORDER (SEPARATE BORDER) */
+/* ================================================================= */
+.table-responsive { overflow-x: auto !important; }
+
+/* Nonaktifkan border ::after yang tembus saat scroll */
+.table-weekly th[style*="position: sticky"]::after,
+.table-weekly td[style*="position: sticky"]::after,
+.thick-border-weekly::after {
+    display: none !important;
+}
+
+/* HEADER BEKU */
+.table-weekly th[style*="position: sticky"] { 
+    background-color: #007bff !important; 
+    z-index: 5 !important; /* Paling atas agar aman */
+}
+
+/* SEL BODY BEKU */
+.table-weekly td[style*="position: sticky"] { 
+    background-color: #ffffff !important; 
+    z-index: 2 !important; /* Di atas scroll */
+}
+
+/* Garis tebal pemisah di kolom screenshot */
+.thick-border-weekly {
+    border-right: 3px solid #343a40 !important;
+}
+
+
+/* ================================================================= */
+/* STICKY HEADER 2 BARIS */
+/* ================================================================= */
+
+/* 1. Baris Pertama (Judul: Status Kamera) */
+.table-weekly thead tr:nth-child(1) th {
+    position: sticky !important;
+    top: 0; 
+    height: 42px !important; /* Tinggi tetap (dipakai sebagai top baris 2) */
+    z-index: 10; 
+    background-color: #007bff !important;
+    box-shadow: 0 1px 0 #007bff !important; /* Garis bawah: menutup celah transparan 1px */
+}
+
+/* 2. Baris Kedua (Judul: Tanggal) */
+.table-weekly thead tr:nth-child(2) th {
+    position: sticky !important;
+    top: 42px !important; /* Harus sama dengan height baris 1 */
+    z-index: 9; 
+    background-color: #007bff !important;
+}
+
+/* 3. Pojok Kiri Atas */
+.table-weekly thead tr:nth-child(1) th[style*="position: sticky"] { z-index: 12 !important; }
+.table-weekly thead tr:nth-child(2) th[style*="position: sticky"] { z-index: 11 !important; }
+</style>
+
+<div class="container-weekly">
+    <h3>Weekly Report - {{ today }}</h3>
+    
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="d-flex justify-content-end mb-3"> 
+
+        <div class="btn-group mr-4">
+            <button type="button" class="btn btn-success btn-sm dropdown-toggle font-weight-bold shadow-sm" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                <i class="feather icon-download"></i> Export Options
+            </button>
+            <div class="dropdown-menu dropdown-menu-right shadow">
+                <a class="dropdown-item text-dark font-weight-bold py-2" href="#" data-toggle="modal" data-target="#exportSiteModal">
+                    <i class="feather icon-file-text text-primary mr-2"></i> Export per Site
+                </a>
+                <a class="dropdown-item text-dark font-weight-bold py-2" href="{{ url_for('home_blueprint.export_weekly_report') }}" onclick="return confirm('Export All Data?');">
+                    <i class="feather icon-layers text-danger mr-2"></i> Export Semua Data
+                </a>
+            </div>
+        </div>
+
+        {% if current_user.can_manage_users %}
+        <button type="button" class="btn btn-danger btn-sm font-weight-bold shadow-sm" data-toggle="modal" data-target="#deleteModal">
+            <i class="fas fa-trash-alt mr-1"></i> Hapus Data Snapshot
+        </button>
+        {% endif %}
+
+    </div>
+
+    <div id="override-toast" class="alert shadow" role="alert"></div>
+
+    <div id="imagePreviewOverlay">
+        <span id="closePreview">&times;</span>
+        <img id="previewImg" src="" alt="Preview">
+    </div>
+
+    <div class="table-responsive" style="max-height: 75vh; overflow: auto; box-shadow: inset 0 0 5px rgba(0,0,0,0.1);">
+        <table class="table-weekly">
+            <thead>
+                <tr>
+                    <th rowspan="2">No</th>
+                    <th rowspan="2">Nama Site</th>
+                    <th rowspan="2">Nama DVR</th>
+                    <th rowspan="2">IP Address</th>
+                    <th rowspan="2">Channel</th>
+                    <th rowspan="2">Nama Kamera</th>
+                    <th rowspan="2">Screenshot</th> 
+                    {% if date_headers|length > 0 %}
+                        <th colspan="{{ date_headers | length }}">STATUS Kamera</th>
+                    {% else %}
+                        <th>STATUS Kamera</th>
+                    {% endif %}
+                </tr>
+                <tr>
+                    {% for header in date_headers %}
+                    <th>{{ header }}</th>
+                    {% endfor %}
+                </tr>
+            </thead>
+            <tbody>
+                {% for row in data %}
+                <tr>
+                    {% if row.rowspan > 0 %}
+                    <td rowspan="{{ row.rowspan }}">{{ row.no }}</td>
+                    <td rowspan="{{ row.rowspan }}">{{ row.site_name }}</td>
+                    {% endif %}
+
+                    <td>{{ row.nvr_name }}</td>
+                    <td>{{ row.ip_address }}</td>
+                    <td>{{ row.channel_number }}</td>
+                    <td>{{ row.camera_name }}</td>
+                
+                    <td class="screenshot-cell" id="shot-{{ row.camera_id }}">
+                        {% if row.screenshot_path %}
+                            <img src="{{ row.screenshot_path }}" 
+                                alt="Screenshot {{ row.camera_name }}"
+                                class="thumbnail-img"
+                                data-full="{{ row.screenshot_path }}">
+                        {% else %}
+                            N/A
+                        {% endif %}
+                    </td>
+                
+                    {% for status in row.statuses %}
+                        {% set col_date = snapshot_dates[loop.index0] %}
+    
+                        <td class="text-center align-middle {{ report_status_class(status) }}"{% if col_date == today_ymd %} id="status-cell-{{ row.camera_id }}"{% endif %}>
+
+                            <span class="status-text">{{ report_status_label(status) }}</span>
+
+                            {% if col_date == today_ymd and current_user.can_edit_daily_report %}
+                                <a href="#" data-toggle="modal" data-target="#editStatusModal{{ row.camera_id }}" class="ml-2" style="color:#000;" title="Revisi Nilai">
+                                    <i class="feather icon-edit"></i>
+                                </a>
+
+                                <div class="modal fade text-left" id="editStatusModal{{ row.camera_id }}" tabindex="-1" role="dialog" aria-hidden="true">
+                                    <div class="modal-dialog modal-sm" role="document">
+                                        <div class="modal-content">
+                                            <div class="modal-header">
+                                                <h5 class="modal-title" style="white-space: normal; word-break: break-word;  line-height: 1.4;">
+                                                    Revisi Status: {{ row.camera_name }}
+                                                </h5>
+                                                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                                                    <span aria-hidden="true">&times;</span>
+                                                </button>
+                                            </div>
+                                            <form action="{{ url_for('home_blueprint.override_weekly_status') }}" method="POST" enctype="multipart/form-data" class="override-form" data-cam-id="{{ row.camera_id }}">
+                                                <div class="modal-body">
+                                                    <input type="hidden" name="camera_id" value="{{ row.camera_id }}">
+                                                    <input type="hidden" name="target_date" value="{{ col_date }}">
+    
+                                                    <p class="text-muted small">Status saat ini: <strong class="current-status-text">{{ report_status_label(status) }}</strong></p>
+                                                    <div class="form-group">
+                                                        <label>Ubah menjadi:</label>
+                                                        <select class="form-control status-selector" name="new_status" data-cam-id="{{ row.camera_id }}" required>
+                                                            <option value="Online" {% if status in ['Online', 'Online (CTP)'] %}selected{% endif %}>Online</option>
+                                                            <option value="Offline" {% if status == 'Offline' %}selected{% endif %}>Offline</option>
+                                                            <option value="Available" {% if status == 'Available' %}selected{% endif %}>Available</option>
+                                                        </select>
+                                                    </div>
+    
+                                                    <div class="form-group upload-bukti-area" id="upload-area-{{ row.camera_id }}" style="display: {% if status in ['Online', 'Online (CTP)'] %}block{% else %}none{% endif %};">
+                                                        <label class="text-success font-weight-bold"><i class="feather icon-camera"></i> Upload Bukti Gambar:</label>
+                                                        <input type="file" class="form-control-file border p-1" name="screenshot_file" accept=".jpg, .jpeg, .png">    
+                                                        <small class="text-muted" style="white-space: normal; display: block; line-height: 1.2; margin-top: 5px;">
+                                                            Sistem akan mencoba auto recover jika tidak diinput gambar dan akan ditimpa jika diupload foto baru.
+                                                        </small>
+                                                    </div>
+
+                                                    <div class="alert alert-warning p-2 small mb-0" style="white-space: normal; word-wrap: break-word;">
+                                                        <i class="feather icon-alert-triangle"></i> Diubah ke Offline &amp; kolom sebelumnya Online / Available &rarr; ticket dibuat (sebelumnya NO DATA / belum ada data &rarr; tanpa tiket). Diubah ke Online dengan foto &rarr; tiket ditutup.
+                                                    </div>
+                                                </div>
+                                                <div class="modal-footer">
+                                                    <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal">Batal</button>
+                                                    <button type="submit" class="btn btn-primary btn-sm">Simpan Revisi</button>
+                                                </div>
+                                            </form>
+                                        </div>
+                                    </div>
+                                </div>
+                            {% endif %}
+                        </td>
+                    {% endfor %}
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+    </div>
+
+
+<div class="modal fade" id="exportModal" tabindex="-1" role="dialog" aria-labelledby="exportModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="exportModalLabel">Export Laporan Excel Per Site</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form method="POST" action="{{ url_for('home_blueprint.export_weekly_report_by_site') }}">
+                <div class="modal-body">
+                    <p>Pilih Site yang ingin Anda *export* laporannya:</p>
+                    <div class="form-group">
+                        <label for="site_select">Pilih Site:</label>
+                        <select class="form-control" id="site_select" name="site_id" required>
+                            <option value="">-- Pilih Site --</option>
+                            {% for site in sites %}
+                                <option value="{{ site.id }}">{{ site.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Export</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="deleteModal" tabindex="-1" role="dialog" aria-labelledby="deleteModalLabel" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title" id="deleteModalLabel"><i class="fas fa-exclamation-triangle mr-2"></i> Peringatan! Hapus Data Snapshot</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form method="POST" action="{{ url_for('home_blueprint.delete_snapshots_by_date') }}" onsubmit="return confirm('ANDA YAKIN INGIN MENGHAPUS SEMUA DATA SNAPSHOT PADA TANGGAL YANG DIPILIH? Tindakan ini tidak dapat dibatalkan.');">
+                <div class="modal-body">
+                    <p>Pilih **tanggal** yang data *snapshot*-nya ingin Anda hapus. Semua data status kamera yang tersimpan pada tanggal tersebut akan **hilang permanen**.</p>
+                    <div class="form-group">
+                        <label for="date_select">Pilih Tanggal Snapshot:</label>
+                        <select class="form-control" id="date_select" name="target_date" required>
+                            <option value="">-- Pilih Tanggal --</option>
+                            {% for d in snapshot_dates %}
+                                <option value="{{ d }}">{{ d }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-danger"><i class="fas fa-trash-alt mr-1"></i> Hapus Permanen</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+{% endblock %}
+
+{% block javascripts %}
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    // Preview gambar
+    const thumbnails = document.querySelectorAll('.thumbnail-img');
+    const overlay = document.getElementById('imagePreviewOverlay');
+    const previewImg = document.getElementById('previewImg');
+    const closeBtn = document.getElementById('closePreview');
+
+    // Delegasi event: thumbnail yang muncul setelah revisi (tanpa reload) juga bisa diklik
+    document.addEventListener('click', function(e) {
+        const thumb = e.target.closest('.thumbnail-img');
+        if (!thumb) return;
+        previewImg.src = thumb.dataset.full;
+        overlay.style.display = 'flex';
+    });
+
+    closeBtn.addEventListener('click', function() {
+        overlay.style.display = 'none';
+        previewImg.src = '';
+    });
+
+    overlay.addEventListener('click', function(e) {
+        if (e.target === overlay) {
+            overlay.style.display = 'none';
+            previewImg.src = '';
+        }
+    });
+    
+    // Reset modal saat ditutup
+    $('#exportModal').on('hidden.bs.modal', function () {
+      $('#site_select').val(''); // Reset pilihan site
+    });
+    
+    $('#deleteModal').on('hidden.bs.modal', function () {
+      $('#date_select').val(''); // Reset pilihan tanggal
+    });
+
+    // Script agar kolom upload muncul otomatis kalau status diubah ke 'Online'
+    $('.status-selector').on('change', function() {
+        let camId = $(this).data('cam-id');
+        let $uploadArea = $('#upload-area-' + camId);
+        let $fileInput = $uploadArea.find('input[type="file"]');
+
+        if ($(this).val() === 'Online' || $(this).val() === 'Available') {
+            // 1. Munculkan kotak upload
+            $uploadArea.slideDown();
+            // 2. Upload tidak wajib (foto hasil scan hari ini dipakai otomatis)
+            $fileInput.prop('required', false); 
+        } else {
+            // 1. Sembunyikan kotak upload
+            $uploadArea.slideUp();
+            // 2. Lepas validasi 
+            $fileInput.prop('required', false);
+            // 3. Kosongkan input file
+            $fileInput.val(''); 
+        }
+    });
+
+    // Pemicu awal saat halaman baru dimuat
+    $('.status-selector').each(function() {
+        let camId = $(this).data('cam-id');
+        let $fileInput = $('#upload-area-' + camId).find('input[type="file"]');
+        
+        // Input file tidak pernah wajib
+        $fileInput.prop('required', false); 
+    });
+
+    // =========================================================
+    // REVISI STATUS TANPA RELOAD: posisi scroll tetap, tidak lompat ke atas
+    // =========================================================
+    function showOverrideToast(message, ok) {
+        const $t = $('#override-toast');
+        $t.removeClass('alert-success alert-danger').addClass(ok ? 'alert-success' : 'alert-danger').text(message).fadeIn(150);
+        clearTimeout(window._overrideToastTimer);
+        window._overrideToastTimer = setTimeout(() => $t.fadeOut(300), 3500);
+    }
+
+    $(document).on('submit', '.override-form', function(e) {
+        e.preventDefault();
+        const form = this;
+        const camId = $(form).data('cam-id');
+        const $btn = $(form).find('button[type="submit"]');
+        const btnHtml = $btn.html();
+        $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm"></span> Menyimpan...');
+
+        fetch(form.action, {
+            method: 'POST',
+            body: new FormData(form),
+            headers: { 'X-Requested-With': 'XMLHttpRequest' },
+            credentials: 'same-origin'
+        })
+        .then(r => r.json().catch(() => ({ ok: false, message: '❌ Respons server tidak valid (sesi habis?).' })))
+        .then(data => {
+            if (!data.ok) { showOverrideToast(data.message, false); return; }
+
+            // 1. Perbarui sel status hari ini
+            const $cell = $('#status-cell-' + camId);
+            $cell.removeClass('status-online status-offline status-available status-nodata status-uncheckable').addClass(data.css_class);
+            $cell.find('.status-text').first().text(data.label);
+            $(form).find('.current-status-text').text(data.label);
+
+            // 2. Perbarui screenshot
+            const $shot = $('#shot-' + camId);
+            if (data.screenshot_url) {
+                const src = data.screenshot_url + '?t=' + Date.now();
+                $shot.html('<img src="' + src + '" class="thumbnail-img" data-full="' + src + '" alt="Screenshot">');
+            } else {
+                $shot.text('N/A');
+            }
+
+            // 3. Tutup modal & bersihkan input file
+            $(form).find('input[type="file"]').val('');
+            $('#editStatusModal' + camId).modal('hide');
+            showOverrideToast(data.message, true);
+        })
+        .catch(() => showOverrideToast('❌ Gagal menghubungi server.', false))
+        .finally(() => $btn.prop('disabled', false).html(btnHtml));
+    });
+});
+</script>
+
+<div class="modal fade" id="exportSiteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('home_blueprint.export_weekly_report_by_site') }}" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title">Export Excel per Site</h5>
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label class="font-weight-bold text-primary">Pilih Site:</label>
+                        <select name="site_id" class="form-control" required>
+                            {% for site in sites %}
+                                <option value="{{ site.id }}">{{ site.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary"><i class="feather icon-download"></i> Download Excel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function applyStickyColumnsWeekly() {
+    const table = document.querySelector('.table-weekly');
+    if (!table) return;
+
+    const firstHeaderRow = table.querySelector('thead tr:first-child');
+    const ths = firstHeaderRow.querySelectorAll('th');
+    
+    let leftOffsets = [];
+    let currentLeft = 0;
+
+    // Bekukan 7 Kolom Header
+    for (let i = 0; i < 7; i++) {
+        if (ths[i]) {
+            leftOffsets.push(currentLeft);
+            ths[i].style.position = 'sticky';
+            ths[i].style.left = currentLeft + 'px';
+            ths[i].style.zIndex = '5'; // Paling atas
+            ths[i].style.backgroundColor = '#007bff'; 
+            
+            if (i === 6) { ths[i].classList.add('thick-border-weekly'); }
+
+            currentLeft += ths[i].getBoundingClientRect().width;
+        }
+    }
+
+    // Bekukan Kolom Body (Memori Rowspan)
+    const tbodyRows = table.querySelectorAll('tbody tr');
+    let rowSpans = [0, 0, 0, 0, 0, 0, 0]; 
+
+    tbodyRows.forEach(row => {
+        let cellDOMIndex = 0; 
+        const cells = row.children;
+
+        for (let logicalCol = 0; logicalCol < 7; logicalCol++) {
+            if (rowSpans[logicalCol] > 0) {
+                rowSpans[logicalCol]--; // Sel ini tergabung ke atas, lewati
+            } else {
+                let cell = cells[cellDOMIndex];
+                if (cell) {
+                    cell.style.position = 'sticky';
+                    cell.style.left = leftOffsets[logicalCol] + 'px';
+                    cell.style.zIndex = '2'; 
+                    cell.style.backgroundColor = '#ffffff'; 
+                    
+
+                    if (logicalCol === 6) { cell.classList.add('thick-border-weekly'); }
+                    
+                    let span = parseInt(cell.getAttribute('rowspan') || '1', 10);
+                    if (span > 1) { rowSpans[logicalCol] = span - 1; }
+                    cellDOMIndex++; 
+                }
+            }
+        }
+    });
+}
+// Auto-scroll ke kolom paling kanan (tanggal terbaru)
+function scrollToLatestDate() {
+    const tableContainer = document.querySelector('.table-responsive');
+    if (tableContainer) {
+        // scrollWidth adalah total panjang tabel, scrollLeft adalah posisi scroll-nya
+        tableContainer.scrollLeft = tableContainer.scrollWidth;
+    }
+}
+
+window.addEventListener('load', () => { 
+    setTimeout(() => {
+        applyStickyColumnsWeekly(); // 1. Bekukan kolom dulu
+        scrollToLatestDate();       // 2. Scroll ke ujung kanan
+    }, 300); 
+});
+window.addEventListener('resize', applyStickyColumnsWeekly);
+</script>
+{% endblock %}

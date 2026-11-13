@@ -1,0 +1,274 @@
+{% extends "layouts/base.html" %}
+{% block title %}Ticket Logs (Active){% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <div>
+            <h3 class="m-0 mb-2">Ticket Logs <span class="text-muted" style="font-size: 0.6em;"></span></h3>
+            <button onclick="openBulkUpdateModal()" class="btn btn-warning btn-sm font-weight-bold text-dark mr-2 shadow-sm">
+                <i class="feather icon-edit-2"></i> Isi Log Terpilih
+            </button>
+            <button onclick="submitBulkDelete()" class="btn btn-danger btn-sm font-weight-bold shadow-sm">
+                <i class="feather icon-trash-2"></i> Hapus Terpilih
+            </button>
+        </div>
+        
+        <div class="d-flex gap-2">
+            <select id="filterSite" class="form-control rounded-pill mr-2" style="min-width: 150px;" onchange="filterTable()">
+                <option value="">-- Semua Site --</option>
+            </select>
+            <select id="filterMonth" class="form-control rounded-pill" style="min-width: 150px;" onchange="filterTable()">
+                <option value="">-- Semua Bulan --</option>
+            </select>
+        </div>
+    </div>
+    
+    <form id="formBulkDelete" method="POST" action="{{ url_for('home_blueprint.bulk_delete_ticket_log') }}" style="display: none;"></form>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show">
+                    {{ message }}
+                    <button type="button" class="close" data-dismiss="alert">&times;</button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="card shadow-sm mb-4 border-left-warning">
+        <div class="card-body p-0">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered m-0 text-center align-middle" id="table-menunggu">
+                    <thead class="thead-light">
+                        <tr>
+                            <th style="width: 5%"><input type="checkbox" id="selectAllCheckbox"></th>
+                            <th style="width: 5%">No</th>
+                            <th style="width: 15%">Tgl Insiden</th>
+                            <th style="width: 45%" class="text-left">Perangkat Terdampak</th>
+                            <th style="width: 15%">Status Fisik</th>
+                            <th style="width: 15%">Status Log</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        {% set count = namespace(value=1) %}
+                        
+                        {% for log in open_ticket %}
+                            {% if log.status == 'Resolved' %}
+                                <tr class="searchable-row" data-site="{{ log.camera.site.name }}" data-month="{{ log.created_at.strftime('%Y-%m') }}">
+                                    <td>
+                                        {% set parent_nvr = nvr_dict.get(log.camera.ip_address) %}
+                                        {% set nvr_name_str = parent_nvr.name if parent_nvr else "UNKNOWN_NVR" %}
+                                        <input type="checkbox" class="ticket-checkbox" value="{{ log.id }}" data-site="{{ log.camera.site.name }}" data-cam="{{ camera_display_name(nvr_name_str, log.camera.name, log.camera.channel, include_nvr=False, model=log.camera.model) if log.camera.channel > 0 else log.issue_type }}" data-nvr="{{ nvr_name_str }}">
+                                    </td>
+                                    <td>{{ count.value }}</td>
+                                    <td>{{ log.created_at.strftime('%d-%b-%Y %H:%M') }}</td>
+                                    <td class="text-left">
+                                        {% set parent_nvr = nvr_dict.get(log.camera.ip_address) %}
+                                        {% set nvr_name_str = parent_nvr.name if parent_nvr else "UNKNOWN_NVR" %}
+                                        {% if log.issue_type == 'HDD Error' %}
+                                            <span class="badge badge-danger">[HDD ERROR]</span> <span class="font-weight-bold">{{ log.camera.site.name }}</span><br><small class="text-muted">{{ nvr_name_str }}</small>
+                                        {% elif log.camera.channel == 0 %}
+                                            <span class="badge badge-dark">[NVR DOWN]</span> <span class="font-weight-bold">{{ log.camera.site.name }}</span><br><small class="text-muted">{{ nvr_name_str }}</small>
+                                        {% else %}
+                                            <span class="badge badge-primary">[KAMERA]</span> <span class="font-weight-bold">{{ log.camera.site.name }}</span><br><small class="text-muted">{{ camera_display_name(nvr_name_str, log.camera.name, log.camera.channel, model=log.camera.model) }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="text-success font-weight-bold"><i class="feather icon-check-circle"></i> Fixed</span></td>
+                                    <td><span class="badge badge-danger"><i class="feather icon-alert-triangle"></i> Butuh Log</span></td>
+                                </tr>
+                                {% set count.value = count.value + 1 %}
+                            {% endif %}
+                        {% endfor %}
+
+                        {% for log in open_ticket %}
+                            {% if log.status == 'Open' %}
+                                <tr class="searchable-row" data-site="{{ log.camera.site.name }}" data-month="{{ log.created_at.strftime('%Y-%m') }}">
+                                    <td>
+                                        {% set parent_nvr = nvr_dict.get(log.camera.ip_address) %}
+                                        {% set nvr_name_str = parent_nvr.name if parent_nvr else "UNKNOWN_NVR" %}
+                                        <input type="checkbox" class="ticket-checkbox" value="{{ log.id }}" data-site="{{ log.camera.site.name }}" data-cam="{{ camera_display_name(nvr_name_str, log.camera.name, log.camera.channel, include_nvr=False, model=log.camera.model) if log.camera.channel > 0 else log.issue_type }}" data-nvr="{{ nvr_name_str }}">
+                                    </td>
+                                    <td>{{ count.value }}</td>
+                                    <td>{{ log.created_at.strftime('%d-%b-%Y %H:%M') }}</td>
+                                    <td class="text-left">
+                                        {% set parent_nvr = nvr_dict.get(log.camera.ip_address) %}
+                                        {% set nvr_name_str = parent_nvr.name if parent_nvr else "UNKNOWN_NVR" %}
+                                        {% if log.issue_type == 'HDD Error' %}
+                                            <span class="badge badge-danger">[HDD ERROR]</span> <span class="font-weight-bold">{{ log.camera.site.name }}</span><br><small class="text-muted">{{ nvr_name_str }}</small>
+                                        {% elif log.camera.channel == 0 %}
+                                            <span class="badge badge-dark">[NVR DOWN]</span> <span class="font-weight-bold">{{ log.camera.site.name }}</span><br><small class="text-muted">{{ nvr_name_str }}</small>
+                                        {% else %}
+                                            <span class="badge badge-primary">[KAMERA]</span> <span class="font-weight-bold">{{ log.camera.site.name }}</span><br><small class="text-muted">{{ camera_display_name(nvr_name_str, log.camera.name, log.camera.channel, model=log.camera.model) }}</small>
+                                        {% endif %}
+                                    </td>
+                                    <td><span class="text-danger font-weight-bold"><i class="feather icon-x-circle"></i> Rusak</span></td>
+                                    <td><span class="badge badge-secondary">Menunggu Teknisi</span></td>
+                                </tr>
+                                {% set count.value = count.value + 1 %}
+                            {% endif %}
+                        {% endfor %}
+                        
+                        {% if count.value == 1 %}
+                        <tr><td colspan="6" class="text-center text-muted py-4">Tidak ada insiden aktif. Semua aman!</td></tr>
+                        {% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addLogModal" tabindex="-1">
+    <div class="modal-dialog modal-lg">
+        <form method="POST" action="{{ url_for('home_blueprint.bulk_update_ticket_log') }}">
+            <input type="hidden" name="ticket_ids" id="modal_ticket_ids"> 
+            
+            <div class="modal-content border-0 shadow-lg">
+                <div class="modal-header bg-warning text-dark">
+                    <h5 class="modal-title font-weight-bold"><i class="feather icon-edit-2"></i> Isi Log Massal Terpilih</h5>
+                    <button type="button" class="close text-dark" data-dismiss="modal">&times;</button>
+                </div>
+                <div class="modal-body p-4 bg-light">
+                    <div class="alert alert-secondary border-0 mb-4 shadow-sm">
+                        <h6 class="font-weight-bold mb-2">Kamera Terdampak:</h6>
+                        <ul id="selected_cameras_list" class="mb-0 text-dark" style="max-height: 120px; overflow-y: auto; font-size: 0.85rem; padding-left: 20px;"></ul>
+                    </div>
+                    <div class="row">
+                        <div class="col-md-12 mb-3">
+                            <label class="font-weight-bold text-muted">Nomor Ticket (Opsional)</label>
+                            <input type="text" class="form-control form-control-lg border-primary" name="ticket_number" id="ticket_number" placeholder="Contoh: TICKET-2026-04-001">
+                            <small class="text-muted">Akan menjadi format {{ branding.ticket_format_hint }} secara otomatis. Boleh dikosongkan untuk langsung mengarsipkan tiket.</small>
+                        </div>
+                    </div>
+                </div>
+                <div class="modal-footer bg-white border-top">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-warning font-weight-bold"><i class="feather icon-save"></i> Simpan & Arsipkan</button>
+                </div>
+            </div>
+        </form>
+    </div>
+</div>
+
+<div class="modal fade" id="deleteConfirmModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content border-0 shadow-lg">
+            <div class="modal-header bg-danger text-white">
+                <h5 class="modal-title font-weight-bold"><i class="fas fa-exclamation-triangle"></i> Konfirmasi Hapus</h5>
+                <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
+            </div>
+            <div class="modal-body p-4 bg-light">
+                <p class="text-dark mb-3">Anda yakin ingin menghapus <b>permanen</b> insiden pada perangkat berikut?</p>
+                
+                <div class="alert alert-danger border-0 mb-0 shadow-sm">
+                    <ul id="delete_cameras_list" class="mb-0 text-dark" style="max-height: 150px; overflow-y: auto; font-size: 0.85rem; padding-left: 20px;">
+                        </ul>
+                </div>
+            </div>
+            <div class="modal-footer bg-white border-top">
+                <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                <button type="button" class="btn btn-danger font-weight-bold" onclick="executeBulkDelete()"><i class="fas fa-trash-alt"></i> Ya, Hapus Permanen</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    let siteSet = new Set(), monthSet = new Set();
+    document.querySelectorAll(".searchable-row").forEach(row => {
+        let site = row.getAttribute("data-site"), month = row.getAttribute("data-month"); 
+        if(site) siteSet.add(site); if(month) monthSet.add(month);
+    });
+
+    let filterSite = document.getElementById("filterSite");
+    siteSet.forEach(site => { filterSite.add(new Option(site, site)); });
+
+    let filterMonth = document.getElementById("filterMonth");
+    Array.from(monthSet).sort().reverse().forEach(month => { filterMonth.add(new Option(month, month)); });
+
+    const selectAllBtn = document.getElementById('selectAllCheckbox');
+    if (selectAllBtn) {
+        selectAllBtn.addEventListener('change', function() {
+            document.querySelectorAll('.searchable-row').forEach(row => {
+                if (row.style.display !== 'none') {
+                    let cb = row.querySelector('.ticket-checkbox');
+                    if(cb) cb.checked = selectAllBtn.checked;
+                }
+            });
+        });
+    }
+});
+
+function filterTable() {
+    let selectedSite = document.getElementById("filterSite").value;
+    let selectedMonth = document.getElementById("filterMonth").value;
+    document.getElementById('selectAllCheckbox').checked = false; 
+
+    document.querySelectorAll(".searchable-row").forEach(row => {
+        let siteMatch = (selectedSite === "" || row.getAttribute("data-site") === selectedSite);
+        let monthMatch = (selectedMonth === "" || row.getAttribute("data-month") === selectedMonth);
+        if (siteMatch && monthMatch) {
+            row.style.display = "";
+        } else {
+            row.style.display = "none";
+            let cb = row.querySelector('.ticket-checkbox');
+            if(cb) cb.checked = false;
+        }
+    });
+}
+
+function openBulkUpdateModal() {
+    let checkedBoxes = document.querySelectorAll('.ticket-checkbox:checked');
+    if (checkedBoxes.length === 0) { alert("⚠️ Pilih minimal 1 perangkat!"); return; }
+
+    let idArray = [], listHTML = "";
+    checkedBoxes.forEach(cb => {
+        idArray.push(cb.value);
+        let nvrStr = cb.getAttribute("data-nvr") ? cb.getAttribute("data-nvr") + " - " : "";
+        listHTML += `<li><b>${cb.getAttribute("data-site")}</b> - ${nvrStr}${cb.getAttribute("data-cam")}</li>`;
+    });
+
+    document.getElementById("modal_ticket_ids").value = idArray.join(",");
+    document.getElementById("selected_cameras_list").innerHTML = listHTML;
+    document.getElementById('ticket_number').value = '';
+    $('#addLogModal').modal('show');
+}
+
+// 5. FUNGSI MEMBUKA MODAL HAPUS MASSAL
+function submitBulkDelete() {
+    let checkedBoxes = document.querySelectorAll('.ticket-checkbox:checked');
+    if (checkedBoxes.length === 0) { alert("⚠️ Pilih minimal 1 log untuk dihapus!"); return; }
+
+    let listHTML = "";
+    let form = document.getElementById("formBulkDelete");
+    form.innerHTML = ""; // Kosongkan form hidden
+    
+    checkedBoxes.forEach(cb => {
+        // A. Buat tampilan list untuk Modal
+        let nvrStr = cb.getAttribute("data-nvr") ? cb.getAttribute("data-nvr") + " - " : "";
+        listHTML += `<li><b>${cb.getAttribute("data-site")}</b> - ${nvrStr}${cb.getAttribute("data-cam")}</li>`;
+        
+        // B. Masukkan data ke form hidden untuk di-submit nanti
+        let input = document.createElement("input");
+        input.type = "hidden"; input.name = "ticket_ids"; input.value = cb.value;
+        form.appendChild(input);
+    });
+
+    // Lempar list HTML ke dalam Modal Hapus
+    document.getElementById("delete_cameras_list").innerHTML = listHTML;
+    
+    // Tampilkan Modal Hapus
+    $('#deleteConfirmModal').modal('show');
+}
+
+// 6. FUNGSI EKSEKUSI HAPUS (Ditekan dari dalam Modal)
+function executeBulkDelete() {
+    // Tombol di dalam modal men-trigger form hidden ini
+    document.getElementById("formBulkDelete").submit();
+}
+</script>
+{% endblock %}

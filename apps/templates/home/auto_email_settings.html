@@ -1,0 +1,106 @@
+{% extends "layouts/base.html" %}
+{% block title %} Auto Email Settings {% endblock %}
+
+{% block content %}
+<div class="container-fluid">
+    <div class="row mb-4">
+        <div class="col-12">
+            <h3 class="mb-0 text-primary"><i class="feather icon-mail"></i> Auto Email Settings</h3>
+        </div>
+    </div>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    <div class="row">
+        <div class="col-xl-8 col-lg-12">
+            <div class="card shadow-sm">
+                <div class="card-header bg-dark text-white">
+                    <h5 class="mb-0 text-white"><i class="feather icon-settings"></i> Konfigurasi SMTP & Jadwal</h5>
+                </div>
+                <div class="card-body">
+                    <form action="{{ url_for('home_blueprint.save_email_settings') }}" method="POST">
+                        
+                        <h6 class="text-primary font-weight-bold mb-3 border-bottom pb-2">1. Server Email (SMTP)</h6>
+                        <div class="row">
+                            <div class="col-md-8 form-group">
+                                <label class="font-weight-bold">SMTP Server</label>
+                                <input type="text" name="smtp_server" class="form-control" value="{{ settings.smtp_server }}" placeholder="Contoh: {{ branding.smtp_server_example }}" required>
+                                <small class="text-muted">Server email kantor: {{ branding.smtp_server_example }}</small>
+                            </div>
+                            <div class="col-md-4 form-group">
+                                <label class="font-weight-bold">SMTP Port</label>
+                                <input type="number" name="smtp_port" class="form-control" value="{{ settings.smtp_port }}" required>
+                            </div>
+                        </div>
+
+                        <h6 class="text-primary font-weight-bold mt-4 mb-3 border-bottom pb-2">2. Akun Pengirim</h6>
+                        <div class="row">
+                            <div class="col-md-6 form-group">
+                                <label class="font-weight-bold">Email Pengirim</label>
+                                <input type="email" name="sender_email" class="form-control" value="{{ settings.sender_email or '' }}" placeholder="{{ branding.sender_email_example }}" required>
+                            </div>
+                            <div class="col-md-6 form-group">
+                                <label class="font-weight-bold">Password Email</label>
+                                <input type="password" name="sender_password" class="form-control" placeholder="Isi hanya jika ingin mengubah password">
+                                <small class="text-danger"><i>*Password akan dienkripsi di database.</i></small>
+                            </div>
+                        </div>
+
+                        <h6 class="text-primary font-weight-bold mt-4 mb-3 border-bottom pb-2">3. Daftar Penerima</h6>
+                        <div class="form-group">
+                            <label class="font-weight-bold">Email Tujuan</label>
+                            <textarea name="receiver_emails" class="form-control" rows="2" placeholder="admin1@domain.com, admin2@domain.com" required>{{ settings.receiver_emails or '' }}</textarea>
+                            <small class="text-muted">Pisahkan dengan tanda koma ( , ) jika lebih dari satu.</small>
+                        </div>
+                        <div class="form-group">
+                            <label class="font-weight-bold">Email Lainnya (CC)</label>
+                            <textarea name="cc_emails" class="form-control" rows="2" placeholder="spv@domain.com, manager@domain.com">{{ settings.cc_emails or '' }}</textarea>
+                            <small class="text-muted">Kosongkan jika tidak ada. Pisahkan dengan tanda koma ( , ) jika lebih dari satu.</small>
+                        </div>
+
+                        <h6 class="text-primary font-weight-bold mt-4 mb-3 border-bottom pb-2">4. Jadwal Otomatisasi</h6>
+                        <div class="row align-items-center">
+                            <div class="col-md-4 form-group mb-0">
+                                <label class="font-weight-bold">Jam Kirim (WIB)</label>
+                                <input type="time" name="schedule_time" class="form-control" value="{{ settings.schedule_time }}" required>
+                            </div>
+                            <div class="col-md-8 form-group mb-0">
+                                <div class="custom-control custom-switch mt-4">
+                                    <input type="checkbox" class="custom-control-input" id="isActiveSwitch" name="is_active" {% if settings.is_active %}checked{% endif %}>
+                                    <label class="custom-control-label font-weight-bold" for="isActiveSwitch" style="cursor: pointer;">Aktifkan Pengiriman Email Otomatis</label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <h6 class="text-primary font-weight-bold mt-4 mb-3 border-bottom pb-2">5. Format Email</h6>
+                        <div class="form-group">
+                            <label class="font-weight-bold">Isi Pesan Email</label>
+                            <textarea name="email_template" class="form-control" rows="12" style="font-family: monospace;" required>{{ settings.email_template or 'Title: SMC AUTO TICKET REPORT GENERATOR - {date}\n\nDear SMC Admin,\n\nBerikut list Ticket baru yang ditemukan. Jangan lupa di generate Ticket baru atau tambahkan list camera baru ini di ongoing Ticket.\n\n{ticket_data}\n\nTerima Kasih' }}</textarea>
+                            <small class="text-muted mt-2 d-block">
+                                <i class="feather icon-info text-info"></i> Biarkan tulisan <code>{date}</code> dan <code>{ticket_data}</code> tetap ada di dalam teks.
+                            </small>
+                        </div>
+
+                        <hr class="mt-4 mb-4">
+                        <div class="text-right">
+                            <button type="submit" class="btn btn-primary"><i class="feather icon-save"></i> Simpan Pengaturan</button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+        
+    </div>
+</div>
+{% endblock %}

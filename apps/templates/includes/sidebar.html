@@ -1,0 +1,124 @@
+<nav class="pcoded-navbar">
+  <div class="navbar-wrapper">
+    <div class="navbar-content scroll-div">
+      <ul class="nav pcoded-inner-navbar">
+
+        <li class="nav-item pcoded-menu-caption">
+          <label>SMC - Sistem Monitoring CCTV</label>
+        </li>
+
+        {% if current_user.can_view_dashboard %}
+        <li data-username="dashboard" class="nav-item {% if 'index' in segment %} active {% endif %}">
+          <a href="/" class="nav-link">
+            <span class="pcoded-micon"><i class="feather icon-home"></i></span>
+            <span class="pcoded-mtext">Dashboard</span>
+          </a>
+        </li>
+        {% endif %}
+
+        {% if current_user.can_view_weekly_report %}
+        <li data-username="weekly report" class="nav-item pcoded-hasmenu {% if 'weekly_report' in segment or 'hdd_report' in segment %}active pcoded-trigger{% endif %}">
+            <a href="#!" class="nav-link">
+                <span class="pcoded-micon"><i class="feather icon-calendar"></i></span>
+                <span class="pcoded-mtext">Weekly Report</span>
+            </a>
+            <ul class="pcoded-submenu">
+              {% if current_user.can_view_report %}
+                <li class="{% if 'weekly_report' in segment %}active{% endif %}">
+                    <a href="/weekly_report">Weekly Camera Report</a>
+                </li>
+                {% endif %}
+                {% if current_user.can_view_weekly_hdd %}
+                <li class="{% if 'hdd_report' in segment %}active{% endif %}">
+                    <a href="/hdd_report">Weekly HDD Report</a>
+                </li>
+                {% endif %}
+            </ul>
+        </li>
+        {% endif %}
+
+        {% if current_user.can_view_daily_report %}
+        <li data-username="daily report" class="nav-item pcoded-hasmenu">
+            <a href="#!" class="nav-link">
+                <span class="pcoded-micon"><i class="feather icon-clock"></i></span>
+                <span class="pcoded-mtext">Daily Report</span>
+            </a>
+            <ul class="pcoded-submenu">
+              {% if current_user.can_view_daily_camera %}
+                <li class="">
+                    <a href="#">Daily Camera Report</a>
+                </li>
+                {% endif %}
+                {% if current_user.can_view_daily_hdd %}
+                <li class="">
+                    <a href="#">Daily HDD Report</a>
+                </li>
+                {% endif %}
+            </ul>
+        </li>
+        {% endif %}
+
+        {% if current_user.can_view_ticket_management %}
+        <li data-username="ticket management" class="nav-item pcoded-hasmenu {% if 'ticket_checker' in segment or 'auto_email_settings' in segment %}active pcoded-trigger{% endif %}">
+            <a href="#!" class="nav-link">
+                <span class="pcoded-micon"><i class="feather icon-alert-triangle"></i></span>
+                <span class="pcoded-mtext">Ticket Management</span>
+            </a>
+            <ul class="pcoded-submenu">
+              {% if current_user.can_view_ticket %}
+                <li class="{% if 'ticket_checker' in segment %}active{% endif %}">
+                    <a href="/ticket_checker">Ticket Checker</a>
+                </li>
+                {% endif %}
+                {% if current_user.can_manage_ticket_log %}
+                <li class="{% if 'ticket_log' in segment %}active{% endif %}">
+                    <a href="/ticket_log">Ticket Log</a>
+                </li>
+                {% endif %}
+                {% if current_user.can_view_ticket_archive %}
+                <li class="{% if 'ticket_archive' in segment %}active{% endif %}">
+                    <a href="/ticket_archive">Ticket Archive</a>
+                </li>
+                {% endif %}
+                {% if current_user.can_manage_email_settings %}
+                <li class="{% if 'auto_email_settings' in segment %}active{% endif %}">
+                    <a href="/auto_email_settings">Auto Email Settings</a>
+                </li>
+                {% endif %}
+            </ul>
+        </li>
+        {% endif %}
+
+        {% if current_user.can_manage_master_location %}
+        <li class="nav-item {% if 'master_location' in segment %}active{% endif %}">
+          <a href="/master_location" class="nav-link">
+            <span class="pcoded-micon"><i class="feather icon-image"></i></span>
+            <span class="pcoded-mtext">Master Location</span>
+          </a>
+        </li>
+        {% endif %}
+
+        {% if current_user.can_manage_system_settings %}
+        <li data-username="camera settings" class="nav-item {% if 'settings' in segment or 'settings_camera' in segment %} active {% endif %}">
+          <a href="/settings" class="nav-link">
+            <span class="pcoded-micon"><i class="feather icon-settings"></i></span>
+            <span class="pcoded-mtext">NVR & SITE Settings</span>
+          </a>
+        </li>
+        {% endif %}
+        
+        {# Account Management disembunyikan selama hak akses mati (config.ini [ACCESS] enabled = false).
+           Halamannya tetap ada di /accounts dan menu ini muncul lagi kalau hak akses dinyalakan. #}
+        {% if access_control_enabled() and current_user.can_manage_users %}
+        <li class="nav-item {% if 'accounts' in segment %}active{% endif %}">
+          <a href="/accounts" class="nav-link ">
+            <span class="pcoded-micon"><i class="feather icon-users"></i></span>
+            <span class="pcoded-mtext">Account Management</span>
+          </a>
+        </li>
+        {% endif %}
+
+      </ul>
+    </div>
+  </div>
+</nav>

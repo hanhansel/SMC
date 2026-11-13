@@ -1,0 +1,250 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Manajemen Akun {% endblock %}
+
+{% block content %}
+<div class="row">
+    <div class="col-sm-12">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5>Daftar Pengguna Sistem</h5>
+                <button type="button" class="btn btn-primary btn-sm" data-toggle="modal" data-target="#addAccountModal">
+                    <i class="feather icon-plus"></i> Tambah Akun
+                </button>
+            </div>
+            <div class="card-body">
+                {% with messages = get_flashed_messages(with_categories=true) %}
+                    {% if messages %}
+                        {% for category, message in messages %}
+                            <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+                                {{ message }}
+                                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                                    <span aria-hidden="true">&times;</span>
+                                </button>
+                            </div>
+                        {% endfor %}
+                    {% endif %}
+                {% endwith %}
+
+                {% set rbac_on = access_control_enabled() %}
+                {# Saat hak akses mati (config.ini [ACCESS] enabled = false), kolom Role & Hak Akses disembunyikan:
+                   semua akun yang login punya akses penuh. Nyalakan lagi lewat config.ini bila dibutuhkan. #}
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Email</th>
+                                {% if rbac_on %}
+                                <th>Role</th>
+                                <th>Hak Akses (Permissions)</th>
+                                {% endif %}
+                                <th>Aksi</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for user in users %}
+                            <tr>
+                                <td><strong>{{ user.username }}</strong></td>
+                                <td>{{ user.email }}</td>
+                                {% if rbac_on %}
+                                <td><span class="badge badge-light-primary">{{ user.role }}</span></td>
+                                <td style="white-space: normal; max-width: 350px;">
+                                    {% for perm in rbac_menus %}
+                                        {% if user | attr(perm.id) %}
+                                            <span class="badge badge-info mb-1 d-inline-block">{{ perm.label }}</span>
+                                        {% endif %}
+                                    {% endfor %}
+                                </td>
+                                {% endif %}
+                                <td>
+                                    <button class="btn btn-icon btn-outline-primary btn-sm" data-toggle="modal" data-target="#editAccountModal{{ user.id }}"><i class="feather icon-edit"></i></button>
+                                    {% if current_user.id != user.id %}
+                                    <button class="btn btn-icon btn-outline-danger btn-sm" data-toggle="modal" data-target="#deleteAccountModal{{ user.id }}"><i class="feather icon-trash-2"></i></button>
+                                    {% endif %}
+                                </td>
+                            </tr>
+
+                            <div class="modal fade" id="editAccountModal{{ user.id }}" tabindex="-1" role="dialog">
+                                <div class="modal-dialog modal-lg" role="document">
+                                    <div class="modal-content">
+                                        <div class="modal-header">
+                                            <h5 class="modal-title">Edit Akun: {{ user.username }}</h5>
+                                            <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+                                        </div>
+                                        <form action="{{ url_for('home_blueprint.edit_account', user_id=user.id) }}" method="POST">
+                                            <div class="modal-body">
+                                                <div class="row">
+                                                    <div class="col-md-6 form-group"><label>Username</label><input type="text" class="form-control" name="username" value="{{ user.username }}" required></div>
+                                                    <div class="col-md-6 form-group"><label>Email</label><input type="email" class="form-control" name="email" value="{{ user.email }}" required></div>
+                                                    <div class="col-md-6 form-group"><label>Password Baru <small>(Kosongkan jika tidak diganti)</small></label><input type="password" class="form-control" name="password"></div>
+                                                    {% if rbac_on %}
+                                                    <div class="col-md-6 form-group"><label>Label Role</label><input type="text" class="form-control" name="role" value="{{ user.role }}" required></div>
+                                                    {% endif %}
+                                                </div>
+                                                {% if rbac_on %}
+                                                <hr>
+                                                <h6 class="mb-3 text-primary"><i class="feather icon-shield"></i> Konfigurasi Hak Akses Dinamis</h6>
+                                                <div class="row">
+                                                    {% for perm in rbac_menus %}
+                                                    <div class="col-md-6 mb-3">
+                            
+                                                        <div class="bg-light p-2 rounded" style="border-left: 4px solid #007bff;">
+                                                            <div class="custom-control custom-checkbox ml-2">
+                                                                <input type="checkbox" class="custom-control-input parent-checkbox" 
+                                                                    id="edit_{{ perm.id }}_{{ user.id }}" 
+                                                                    name="{{ perm.id }}" 
+                                                                    data-target="child_edit_{{ perm.id }}_{{ user.id }}"
+                                                                    {% if user | attr(perm.id) %}checked{% endif %}>
+                                                                <label class="custom-control-label font-weight-bold {% if 'Admin' in perm.label %}text-danger{% else %}text-dark{% endif %}" 
+                                                                    for="edit_{{ perm.id }}_{{ user.id }}">
+                                                                    {{ perm.label }}
+                                                                    </label>
+                                                            </div>
+                                                        </div>
+
+                                                        {% if perm.children %}
+                                                        <div class="ml-4 mt-2 child-container" id="child_edit_{{ perm.id }}_{{ user.id }}" style="display: {% if user | attr(perm.id) %}block{% else %}none{% endif %}; border-left: 2px dashed #ccc; padding-left: 15px;">
+                                                            {% for child in perm.children %}
+                                                            <div class="custom-control custom-checkbox mb-1">
+                                                                <input type="checkbox" class="custom-control-input child-checkbox" 
+                                                                    id="edit_{{ child.id }}_{{ user.id }}" 
+                                                                    name="{{ child.id }}"
+                                                                    {% if user | attr(child.id) %}checked{% endif %}>
+                                                                <label class="custom-control-label {% if 'Aksi' in child.label %}text-warning font-weight-bold{% endif %}" 
+                                                                    for="edit_{{ child.id }}_{{ user.id }}">{{ child.label }}</label>
+                                                            </div>
+                                                            {% endfor %}
+                                                        </div>
+                                                        {% endif %}
+
+                                                    </div>
+                                                    {% endfor %}
+                                                </div>
+                                                {% endif %}
+                                            </div>
+                                            <div class="modal-footer">
+                                                <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                                                <button type="submit" class="btn btn-primary">Simpan Perubahan</button>
+                                            </div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="modal fade" id="deleteAccountModal{{ user.id }}" tabindex="-1" role="dialog">
+                                <div class="modal-dialog" role="document">
+                                    <div class="modal-content">
+                                        <div class="modal-header"><h5 class="modal-title">Konfirmasi Hapus</h5><button type="button" class="close" data-dismiss="modal"><span>&times;</span></button></div>
+                                        <form action="{{ url_for('home_blueprint.delete_account', user_id=user.id) }}" method="POST">
+                                            <div class="modal-body"><p>Apakah Anda yakin ingin menghapus akun <strong>{{ user.username }}</strong>?</p></div>
+                                            <div class="modal-footer"><button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button><button type="submit" class="btn btn-danger">Ya, Hapus</button></div>
+                                        </form>
+                                    </div>
+                                </div>
+                            </div>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="addAccountModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog modal-lg" role="document">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Tambah Akun Baru</h5>
+                <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form action="{{ url_for('home_blueprint.add_account') }}" method="POST">
+                <div class="modal-body">
+                    <div class="row">
+                        <div class="col-md-6 form-group">
+                            <label>Username</label>
+                            <input type="text" class="form-control" name="username" required>
+                        </div>
+                        <div class="col-md-6 form-group">
+                            <label>Email</label>
+                            <input type="email" class="form-control" name="email" required>
+                        </div>
+                        <div class="col-md-6 form-group">
+                            <label>Password</label>
+                            <input type="password" class="form-control" name="password" required>
+                        </div>
+                        {% if access_control_enabled() %}
+                        <div class="col-md-6 form-group">
+                            <label>Label Role (Contoh: Teknisi, Viewer)</label>
+                            <input type="text" class="form-control" name="role" value="Teknisi" required>
+                        </div>
+                        {% endif %}
+                    </div>
+                    {% if access_control_enabled() %}
+                    <hr>
+                    <h6 class="mb-3 text-primary"><i class="feather icon-shield"></i> Konfigurasi Hak Akses Dinamis</h6>
+                    <div class="row">
+                        {% for perm in rbac_menus %}
+                        <div class="col-md-6 mb-3">
+                            <div class="bg-light p-2 rounded" style="border-left: 4px solid #007bff;">
+                                <div class="custom-control custom-checkbox ml-2">
+                                    <input type="checkbox" class="custom-control-input parent-checkbox" id="add_{{ perm.id }}" name="{{ perm.id }}" data-target="child_add_{{ perm.id }}">
+                                    <label class="custom-control-label font-weight-bold {% if 'Admin' in perm.label %}text-danger{% else %}text-dark{% endif %}" for="add_{{ perm.id }}">
+                                        {{ perm.label }}
+                                    </label>
+                                </div>
+                            </div>
+                            
+                            {% if perm.children %}
+                            <div class="ml-4 mt-2 child-container" id="child_add_{{ perm.id }}" style="display: none; border-left: 2px dashed #ccc; padding-left: 15px;">
+                                {% for child in perm.children %}
+                                <div class="custom-control custom-checkbox mb-1">
+                                    <input type="checkbox" class="custom-control-input child-checkbox" id="add_{{ child.id }}" name="{{ child.id }}">
+                                    <label class="custom-control-label {% if 'Aksi' in child.label %}text-warning font-weight-bold{% endif %}" for="add_{{ child.id }}">{{ child.label }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            {% endif %}
+                        </div>
+                        {% endfor %}
+                    </div>
+                    {% endif %}
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Buat Akun</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+$(document).ready(function() {
+    // Tampilkan child container yang parent-nya sudah tercentang sejak awal (Untuk Modal Edit)
+    $('.parent-checkbox').each(function() {
+        if ($(this).is(':checked')) {
+            $('#' + $(this).data('target')).show();
+        }
+    });
+
+    // Animasi Slide Down/Up saat Parent di-klik
+    $('.parent-checkbox').on('change', function() {
+        let targetId = $(this).data('target');
+        let $container = $('#' + targetId);
+        
+        if ($(this).is(':checked')) {
+            $container.slideDown('fast'); // Melar ke bawah perlahan
+        } else {
+            $container.slideUp('fast'); // Mengkerut ke atas
+            // Centang anak ikut dimatikan jika induknya dimatikan
+            $container.find('.child-checkbox').prop('checked', false); 
+        }
+    });
+});
+</script>
+{% endblock content %}

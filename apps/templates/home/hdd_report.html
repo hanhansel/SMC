@@ -1,0 +1,429 @@
+{% extends "layouts/base.html" %}
+{% block title %} Laporan HDD History {% endblock %}
+{% block content %}
+
+<style>
+/* ================================================================= */
+/* STICKY BORDER & HEADER HDD REPORT */
+/* ================================================================= */
+.table-responsive { overflow-x: auto !important; }
+
+/* 1. Border terpisah (separate) agar kolom sticky tidak bergeser */
+.table-responsive table {
+    border-collapse: separate !important; 
+    border-spacing: 0;
+    border-left: 1px solid #dee2e6;
+    border-top: 1px solid #dee2e6;
+}
+
+/* 2. GAMBAR ULANG GARIS DALAM */
+.table-responsive table th,
+.table-responsive table td {
+    border-bottom: 1px solid #dee2e6;
+    border-right: 1px solid #dee2e6;
+    background-clip: padding-box !important; 
+}
+
+/* 3. Nonaktifkan border ::after yang tembus saat scroll */
+.table-responsive table th[style*="position: sticky"]::after,
+.table-responsive table td[style*="position: sticky"]::after,
+.thick-border-hdd::after {
+    display: none !important;
+}
+
+/* ================================================================= */
+/* Z-INDEX & POSISI STICKY (HEADER & BODY) */
+/* ================================================================= */
+
+/* BARIS 1: JUDUL ATAS (Riwayat Status) */
+.table-responsive table thead tr:nth-child(1) th {
+    position: sticky !important;
+    top: 0;
+    z-index: 10;
+    background-color: #343a40 !important;
+    color: #ffffff !important;
+    box-shadow: 0 1px 0 #343a40 !important; /* Garis bawah agar tidak ada celah */
+}
+
+/* BARIS 2: TANGGAL (Top akan diisi oleh Javascript) */
+.table-responsive table thead tr:nth-child(2) th {
+    position: sticky !important;
+    z-index: 9;
+    background-color: #343a40 !important;
+    color: #ffffff !important;
+    box-shadow: 0 1px 0 #343a40 !important; /* Garis bawah */
+    min-width: 120px !important; 
+    width: 120px !important;
+    text-align: center;
+}
+
+/* POJOK KIRI ATAS: (Site, NVR, IP, Disk Info) - z-index tertinggi */
+.table-responsive table thead tr:nth-child(1) th[rowspan] {
+    z-index: 15 !important; /* Paling tinggi agar tidak tertimpa apapun */
+    background-color: #343a40 !important;
+    /* Garis kanan tebal, garis bawah gelap */
+    box-shadow: inset -1px 0 0 #343a40, 1px 0 0 #6c757d, 0 1px 0 #343a40 !important;
+}
+
+/* SEL BODY BEKU KIRI (Background Putih) */
+.table-responsive table td[style*="position: sticky"] { 
+    background-color: #ffffff !important; 
+    z-index: 2 !important; 
+    background-clip: border-box !important; 
+    /* Garis kiri agar tidak ada celah 1px */
+    box-shadow: inset 1px 0 0 #ffffff, 1px 0 0 #dee2e6 !important;
+}
+
+/* GARIS TEBAL PEMISAH (Sisi Kanan Kolom Disk Info) */
+.thick-border-hdd {
+    border-right: 3px solid #6c757d !important;
+    background-clip: border-box !important;
+    box-shadow: inset 1px 0 0 #ffffff, 1px 0 0 #6c757d !important;
+}
+
+/* ================================================================= */
+/* SLOT PER TANGGAL: 1 blok NVR dibagi rata sesuai jumlah slot hari itu */
+/* ================================================================= */
+.hdd-date-cell { padding: 0 !important; height: 1px; vertical-align: top !important; }
+.hdd-stack { display: flex; flex-direction: column; height: 100%; }
+.hdd-slot {
+    flex: 1 1 0;
+    display: flex; flex-direction: column; justify-content: center; align-items: center;
+    text-align: center; padding: 4px; font-size: 11px;
+}
+.hdd-slot + .hdd-slot { border-top: 1px solid #dee2e6; }
+.hdd-slot-title { font-weight: bold; margin-bottom: 2px; }
+.hdd-meta { font-size: 10px; color: #555; }
+.hdd-used { color: #d35400; font-weight: bold; }
+.hdd-set {
+    flex: 0 0 auto; font-size: 10px; font-weight: bold; color: #007bff;
+    border-top: 1px solid #eee; padding: 2px; text-align: center;
+}
+</style>
+
+<div class="main-body">
+    <div class="page-wrapper">
+        <div class="row mb-3">
+            <div class="col-12">
+                <div class="card shadow-sm">
+                    <div class="card-body p-3"> 
+                        <div class="d-flex justify-content-between align-items-center flex-wrap">
+                            <h5 class="m-0 text-primary font-weight-bold">Laporan HDD History & Rotasi Set</h5>
+                            <div class="d-flex align-items-center">
+                                <button class="btn btn-warning btn-sm ml-2 font-weight-bold" data-toggle="modal" data-target="#switchSetModal">
+                                    <i class="feather icon-refresh-cw"></i> Ganti Set
+                                </button>
+                                <button class="btn btn-danger btn-sm ml-2 font-weight-bold" data-toggle="modal" data-target="#deleteSetModal">
+                                    <i class="feather icon-trash-2"></i> Hapus Set
+                                </button>
+                                <button class="btn btn-secondary btn-sm ml-2 font-weight-bold" data-toggle="modal" data-target="#deleteSnapshotModal">
+                                    <i class="feather icon-calendar"></i> Hapus Snapshot
+                                </button>
+                                <button class="btn btn-primary btn-sm ml-2 font-weight-bold" data-toggle="modal" data-target="#exportSiteModal">
+                                    <i class="feather icon-download"></i> Export Site
+                                </button>
+                                <a href="{{ url_for('home_blueprint.export_hdd_all') }}" class="btn btn-success btn-sm ml-2 font-weight-bold">
+                                    <i class="feather icon-file-text"></i> Export All
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="row">
+            <div class="col-12"> 
+                <div class="card shadow-sm">
+                    <div class="card-block table-border-style px-0 py-0">
+                        <div class="table-responsive" style="max-height: 75vh; overflow: auto; box-shadow: inset 0 0 5px rgba(0,0,0,0.1);">
+                            <table class="table table-striped table-bordered table-hover mb-0" style="width: 100%;">
+                                <thead class="thead-dark text-center">
+                                    <tr>
+                                        <th rowspan="2" style="vertical-align: middle;">Site</th>
+                                        <th rowspan="2" style="vertical-align: middle;">NVR</th>
+                                        <th rowspan="2" style="vertical-align: middle;">IP</th>
+                                        <th rowspan="2" style="vertical-align: middle;">Disk Info<br><small>(Brand)</small></th>
+                                        <th colspan="{{ date_headers|length }}">Riwayat Status</th>
+                                    </tr>
+                                    <tr>
+                                        {% for d in date_headers %}
+                                            <th style="font-size: 11px;">{{ d.strftime('%d-%b-%Y') }}</th>
+                                        {% endfor %}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {% for group in grouped_data %}
+                                        <tr>
+                                            <td style="font-weight: bold; background-color:#fff; vertical-align: middle;">{{ group.site }}</td>
+                                            <td style="background-color:#fff; vertical-align: middle;">{{ group.nvr }}</td>
+                                            <td style="background-color:#fff; vertical-align: middle;">{{ group.ip }}</td>
+                                            <td style="vertical-align: middle;">{{ group.disk_info }}</td>
+
+                                            {% for cell in group.cells %}
+                                                <td class="hdd-date-cell">
+                                                    {# Tinggi blok = slot terbanyak NVR ini, tanggal dgn slot lebih sedikit dibagi rata #}
+                                                    <div class="hdd-stack" style="min-height: {{ group.height * 78 }}px;">
+                                                        {% if cell.kind == 'slots' %}
+                                                            {% for slot in cell.slots %}
+                                                                <div class="hdd-slot">
+                                                                    <div class="hdd-slot-title">Slot: {{ slot.slot_no }}</div>
+                                                                    {% if slot.level == 'ok' %}
+                                                                        <span class="badge badge-success">OK</span>
+                                                                    {% elif slot.level == 'nodisk' %}
+                                                                        <small class="text-muted" style="font-size: 10px;"><i>No Disk</i></small>
+                                                                    {% elif slot.level == 'unknown' %}
+                                                                        <span class="badge badge-secondary" title="Status belum dikenal — tidak dibuatkan tiket">{{ slot.label }}</span>
+                                                                    {% else %}
+                                                                        <span class="badge badge-danger">{{ slot.label }}</span>
+                                                                    {% endif %}
+                                                                    <div class="hdd-meta">Total: {{ slot.total }}</div>
+                                                                    <div class="hdd-meta hdd-used">Used: {{ slot.used }}</div>
+                                                                </div>
+                                                            {% endfor %}
+                                                            {% if cell.set %}
+                                                                <div class="hdd-set">{{ cell.set }}</div>
+                                                            {% endif %}
+                                                        {% elif cell.kind == 'fail' %}
+                                                            <div class="hdd-slot">
+                                                                <span class="badge {{ 'badge-warning' if cell.level == 'conn' else 'badge-secondary' }}">{{ cell.label }}</span>
+                                                            </div>
+                                                            {% if cell.set %}
+                                                                <div class="hdd-set">{{ cell.set }}</div>
+                                                            {% endif %}
+                                                        {% else %}
+                                                            <div class="hdd-slot"><span class="text-muted">-</span></div>
+                                                        {% endif %}
+                                                    </div>
+                                                </td>
+                                            {% endfor %}
+                                        </tr>
+                                    {% endfor %}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% include 'home/includes/hdd_modals.html' ignore missing %} 
+<div class="modal fade" id="switchSetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('home_blueprint.switch_hdd_set') }}" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title">Ganti Set HDD</h5>
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Pilih NVR</label>
+                        <select name="nvr_id" class="form-control" required>
+                            <option value="">-- Pilih NVR --</option>
+                            {% for site in sites %}
+                                <optgroup label="{{ site.name }}">
+                                    {% for cam in site.cameras if cam.device_type == 'NVR' and cam.channel == 0 %}
+                                        <option value="{{ cam.id }}">{{ cam.name }}</option>
+                                    {% endfor %}
+                                </optgroup>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Nama Set Baru</label>
+                        <input type="text" name="set_name" class="form-control" placeholder="Contoh: Set 1, Set A" required>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary">Simpan & Update</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="deleteSetModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('home_blueprint.delete_hdd_set') }}" method="POST">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title text-white">🗑️ Hapus / Reset Set HDD</h5>
+                    <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="feather icon-alert-triangle"></i> Tindakan ini akan menghapus label Set dari NVR dan mengembalikannya ke tampilan standar (3 baris).
+                    </div>
+                    <div class="form-group">
+                        <label>Pilih NVR yang ingin di-reset:</label>
+                        <select name="nvr_id" class="form-control" required>
+                            <option value="">-- Pilih NVR --</option>
+                            {% for site in sites %}
+                                <optgroup label="{{ site.name }}">
+                                    {% for cam in site.cameras if cam.device_type == 'NVR' and cam.channel == 0 %}
+                                        {% if cam.current_hdd_set %}
+                                            <option value="{{ cam.id }}">{{ cam.name }} (Set: {{ cam.current_hdd_set }})</option>
+                                        {% endif %}
+                                    {% endfor %}
+                                </optgroup>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-danger">Hapus Set</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="deleteSnapshotModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('home_blueprint.delete_hdd_snapshot') }}" method="POST">
+                <div class="modal-header bg-danger text-white">
+                    <h5 class="modal-title text-white">🗑️ Hapus Snapshot Harian (HDD)</h5>
+                    <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="alert alert-warning">
+                        <i class="feather icon-alert-triangle"></i> Tindakan ini akan menghapus <b>SEMUA</b> data riwayat HDD pada tanggal yang dipilih.
+                    </div>
+                    <div class="form-group">
+                        <label>Pilih Tanggal Snapshot:</label>
+                        <select name="snapshot_date" class="form-control" required>
+                            <option value="">-- Pilih Tanggal --</option>
+                            {% for d in date_headers %}
+                                <option value="{{ d.strftime('%Y-%m-%d') }}">{{ d.strftime('%d-%b-%Y') }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-danger">Hapus Permanen</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="exportSiteModal" tabindex="-1">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <form action="{{ url_for('home_blueprint.export_hdd_site') }}" method="POST">
+                <div class="modal-header">
+                    <h5 class="modal-title">Export Excel per Site</h5>
+                    <button type="button" class="close" data-dismiss="modal">&times;</button>
+                </div>
+                <div class="modal-body">
+                    <div class="form-group">
+                        <label>Pilih Site</label>
+                        <select name="site_id" class="form-control" required>
+                            {% for site in sites %}
+                                <option value="{{ site.id }}">{{ site.name }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-success" onclick="return confirm('Export All Data?');">Download Excel</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+
+<script>
+function applyStickyColumnsHDD() {
+    const table = document.querySelector('.table-responsive table');
+    if (!table) return;
+
+    // AMBIL HEADER BARIS PERTAMA
+    const firstHeaderRow = table.querySelector('thead tr:first-child');
+    const ths = firstHeaderRow.querySelectorAll('th');
+    
+    // Posisi top baris tanggal (baris 2) = tinggi baris 1
+    const firstRowTh = table.querySelector('thead tr:first-child th:last-child');
+    if (firstRowTh) {
+        const exactHeight = firstRowTh.getBoundingClientRect().height; 
+        const secondRowThs = table.querySelectorAll('thead tr:nth-child(2) th');
+        secondRowThs.forEach(th => {
+            th.style.top = exactHeight + 'px'; 
+        });
+    }
+    
+    let leftOffsets = [];
+    let currentLeft = 0;
+
+    // BEKUKAN 4 KOLOM KIRI (Site, NVR, IP, Disk Info)
+    for (let i = 0; i < 4; i++) {
+        if (ths[i]) {
+            leftOffsets.push(currentLeft);
+            ths[i].style.position = 'sticky';
+            ths[i].style.left = currentLeft + 'px';
+            
+            // z-index tinggi untuk kolom header yang sticky
+            ths[i].style.zIndex = '15'; 
+            
+            if (i === 3) { ths[i].classList.add('thick-border-hdd'); }
+
+            currentLeft += ths[i].getBoundingClientRect().width;
+        }
+    }
+
+    // BEKUKAN KOLOM BODY (DENGAN KALKULASI ROWSPAN)
+    const tbodyRows = table.querySelectorAll('tbody tr');
+    let rowSpans = [0, 0, 0, 0];
+
+    tbodyRows.forEach(row => {
+        let cellDOMIndex = 0; 
+        const cells = row.children;
+
+        for (let logicalCol = 0; logicalCol < 4; logicalCol++) {
+            if (rowSpans[logicalCol] > 0) {
+                rowSpans[logicalCol]--;
+            } else {
+                let cell = cells[cellDOMIndex];
+                if (cell) {
+                    cell.style.position = 'sticky';
+                    cell.style.left = leftOffsets[logicalCol] + 'px';
+                    cell.style.zIndex = '2'; // Body beku ada di atas body biasa (1), tapi di bawah header (10/15)
+                    cell.style.backgroundColor = '#ffffff'; 
+
+                    if (logicalCol === 3) { cell.classList.add('thick-border-hdd'); }
+                    
+                    let span = parseInt(cell.getAttribute('rowspan') || '1', 10);
+                    if (span > 1) { rowSpans[logicalCol] = span - 1; }
+                    cellDOMIndex++; 
+                }
+            }
+        }
+    });
+}
+
+// Auto-scroll ke kolom paling kanan (tanggal terbaru)
+function scrollToLatestDateHDD() {
+    const tableContainer = document.querySelector('.table-responsive');
+    if (tableContainer) {
+        tableContainer.scrollLeft = tableContainer.scrollWidth;
+    }
+}
+
+window.addEventListener('load', () => { 
+    setTimeout(() => {
+        applyStickyColumnsHDD();
+        scrollToLatestDateHDD(); 
+    }, 300); 
+});
+window.addEventListener('resize', applyStickyColumnsHDD);
+</script>
+
+{% endblock content %}

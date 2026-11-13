@@ -1,0 +1,425 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} AI Live Monitoring {% endblock %}
+
+{% block stylesheets %}
+{{ super() }}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+<style>
+    /* -------------------------------------------------------------------------------- */
+    /* CSS ACCORDION & VISUAL STYLING */
+    /* -------------------------------------------------------------------------------- */
+    .accordion-content, .nvr-accordion-content {
+        max-height: 0;
+        overflow: hidden;
+        /* Gunakan transition pada max-height untuk efek smooth */
+        transition: max-height 0.4s ease-in-out; 
+    }
+    .accordion-header, .nvr-accordion-header { cursor: pointer; transition: background-color 0.2s; }
+    .accordion-header:hover { background-color: #eef2ff; }
+    .nvr-accordion-header:hover { background-color: #f3f4f6; }
+    .icon-rotate { transition: transform 0.3s; }
+    
+    .camera-list-item { 
+        padding: 8px 12px; 
+        cursor: pointer; 
+        border-bottom: 1px solid #f0f0f0; 
+        transition: background-color 0.15s;
+    }
+    .camera-list-item:hover { background-color: #f0f0f0; }
+    .camera-list-item.active { 
+        background-color: #5e72e4!important; /* Warna primer */
+        color: white; 
+        font-weight: bold;
+    }
+    .camera-list-item.active span, .camera-list-item.active i {
+        color: white !important;
+    }
+    
+    /* -------------------------------------------------------------------------------- */
+    /* VIDEO STYLING */
+    /* -------------------------------------------------------------------------------- */
+    .video-wrapper { 
+        position: relative; 
+        width: 100%; 
+        padding-top: 56.25%; /* Rasio 16:9 */
+    }
+    .video-wrapper img, .video-loader, .error-state {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+    }
+    .video-wrapper img { 
+        display: none; /* Disembunyikan secara default oleh JS */
+        min-height: 300px;
+    } 
+    .video-loader, .error-state {
+        display: none;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        color: #fff;
+        background-color: #1a1a1a;
+        text-align: center;
+        padding: 20px;
+    }
+    .video-loader.active { display: flex; }
+    .error-state { background-color: #333; }
+
+    /* Blink REC indicator */
+    .blink-rec {
+        position: absolute;
+        top: 10px;
+        right: 10px;
+        z-index: 10;
+        color: white;
+        font-size: 0.8rem;
+        font-weight: bold;
+        display: none; /* Tampilkan saat stream aktif */
+    }
+    .blink-rec.active { display: flex; align-items: center; }
+    .blink-dot {
+        width: 8px;
+        height: 8px;
+        background-color: red;
+        border-radius: 50%;
+        margin-right: 5px;
+        animation: blink 1s step-start infinite;
+    }
+    @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
+
+    /* Custom Scrollbar */
+    .custom-scroll { 
+        overflow-y: auto; 
+        max-height: 75vh; 
+    }
+</style>
+{% endblock stylesheets %}
+
+{% block content %}
+
+<div class="container-fluid py-4">
+    <div class="row">
+        
+        <div class="col-lg-3 col-md-4 mb-4">
+            <div class="card shadow-sm h-100 border-0">
+                <div class="card-header bg-white border-bottom">
+                    <h6 class="mb-0 font-weight-bold text-gray-800"><i class="fas fa-list-alt mr-2"></i>Daftar Kamera AI</h6>
+                </div>
+                <div class="card-body p-0 custom-scroll">
+                    
+                    {% if sites %}
+                        {% for site in sites %}
+                        <div class="border-bottom">
+                            <div class="accordion-header p-3 d-flex justify-content-between align-items-center" data-type="site" data-site-id="{{ site.id }}">
+                                <span class="font-weight-bold text-dark" style="font-size: 0.95rem;">
+                                    <i class="fas fa-map-marker-alt mr-2 text-danger"></i>{{ site.name }}
+                                </span>
+                                <i class="fas fa-chevron-down icon-rotate text-muted"></i>
+                            </div>
+                            
+                            <div class="accordion-content bg-light" id="site-content-{{ site.id }}">
+                                {% for nvr in site.valid_nvrs_list %}
+                                <div class="border-bottom pl-2">
+                                    <div class="nvr-accordion-header p-2 d-flex justify-content-between align-items-center" data-type="nvr">
+                                        <span class="small font-weight-bold text-secondary">
+                                            <i class="fas fa-server mr-2"></i>{{ nvr.name }}
+                                        </span>
+                                        <i class="fas fa-chevron-down icon-rotate small text-muted"></i>
+                                    </div>
+
+                                    <div class="nvr-accordion-content bg-white">
+                                        <ul class="list-unstyled mb-0">
+                                            {% for ch in nvr.ai_channels_list %}
+                                            <li class="camera-list-item" 
+                                                data-id="{{ ch.id }}" 
+                                                data-name="{{ ch.name }}"
+                                                data-desc="NVR: {{ nvr.name }} | IP: {{ ch.ip_address }}">
+                                                <div class="d-flex align-items-center justify-content-between w-100 p-2">
+                                                    <span class="text-truncate" style="max-width: 140px;">
+                                                        <i class="fas fa-video mr-2 text-success"></i>{{ ch.name }}
+                                                    </span>
+                                                    
+                                                    <div class="d-flex flex-column align-items-end text-right">
+                                                        <span class="badge badge-danger badge-pill mb-1" style="font-size: 0.6rem; line-height: 1;">AI ON</span>
+                                                        <span class="text-muted" style="font-size: 0.65rem; line-height: 1;">
+                                                            {% if ch.ai_config.detect_people %}👨‍ People {% endif %}
+                                                            {% if ch.ai_config.detect_helmet %}👷 Helmet {% endif %}
+                                                            {% if ch.ai_config.detect_custom %}⚙️ Custom {% endif %}
+                                                        </span>
+                                                    </div>
+                                                </div>
+                                            </li>
+                                            {% endfor %}
+                                        </ul>
+                                    </div>
+                                </div>
+                                {% endfor %}
+                            </div>
+                        </div>
+                        {% endfor %}
+                    {% else %}
+                        <div class="p-5 text-center text-muted">
+                            <i class="fas fa-video-slash fa-3x mb-3 text-gray-300"></i>
+                            <p class="mb-3">Tidak ada kamera dengan AI aktif.</p>
+                            <a href="/ai_settings" class="btn btn-sm btn-outline-primary rounded-pill px-4">Konfigurasi</a>
+                        </div>
+                    {% endif %}
+
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-9 col-md-8">
+            <div class="card shadow-sm border-0">
+                <div class="card-header bg-white d-flex justify-content-between align-items-center py-3">
+                    <div>
+                        <h5 class="mb-0 text-dark font-weight-bold" id="video-title">
+                            <i class="fas fa-tv mr-2"></i>Pilih Kamera
+                        </h5>
+                        <span id="video-desc" class="small text-muted">Silakan pilih kamera dari daftar.</span>
+                    </div>
+                    <button class="btn btn-sm btn-light border" onclick="toggleFullscreen()" title="Fullscreen">
+                        <i class="fas fa-expand"></i>
+                    </button>
+                </div>
+                <div class="card-body p-0 bg-dark">
+                    <div class="video-wrapper" id="videoWrapper">
+                        
+                        <div class="blink-rec" id="blink-rec">
+                            <div class="blink-dot"></div> LIVE AI
+                        </div>
+
+                        <div class="video-loader" id="video-loader">
+                            <div class="spinner-border text-light mb-2" role="status"></div>
+                            <small>Menghubungkan ke stream...</small>
+                        </div>
+
+                        <div class="error-state" id="video-error">
+                            <i class="fas fa-exclamation-triangle fa-3x mb-3"></i>
+                            <h5>Stream Offline</h5>
+                            <p class="small">Gagal terhubung ke kamera atau RTSP tidak tersedia.</p>
+                            <button class="btn btn-sm btn-warning mt-2" onclick="retryStream()">Coba Lagi</button>
+                        </div>
+
+                        <img id="video-stream" alt="Stream">
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content %}
+
+
+{% block javascripts %}
+{{ super() }}
+<script>
+    // --- 1. LOGIKA ACCORDION (tinggi dinamis) ---
+    
+    // Fungsi untuk memperbarui max-height elemen parent (Site)
+    function updateParentMaxHeight(element, isOpening, contentHeight) {
+        // Cari elemen accordion-content parent (yaitu, konten Site)
+        let siteContent = element.closest('.accordion-content');
+        if (siteContent) {
+            // Cek apakah Site Content sedang terbuka atau tidak
+            let isSiteOpen = siteContent.style.maxHeight && siteContent.style.maxHeight !== '0px';
+            
+            // Dapatkan tinggi Site Content saat ini (default ke scrollHeight jika belum diatur)
+            // scrollHeight dipakai karena max-height bisa 'null' atau '0px'
+            let currentHeight = siteContent.scrollHeight; 
+
+            // Site belum terbuka -> tidak perlu disesuaikan (ditangani toggleAccordion)
+            if (!isSiteOpen) return;
+            
+            // Dapatkan max-height yang saat ini diterapkan (yang diatur oleh JS)
+            let currentMaxHeight = parseFloat(siteContent.style.maxHeight) || currentHeight; 
+
+            let newHeight;
+            if (isOpening) {
+                // Saat elemen anak (NVR) dibuka: tambahkan tinggi anak ke max-height induk.
+                newHeight = currentMaxHeight + contentHeight;
+            } else {
+                // Saat elemen anak (NVR) ditutup: kurangi tinggi anak dari max-height induk.
+                newHeight = currentMaxHeight - contentHeight;
+            }
+            
+            // Terapkan tinggi baru, pastikan minimal setinggi scrollHeight aslinya
+            siteContent.style.maxHeight = Math.max(newHeight, currentHeight) + "px";
+        }
+    }
+
+    function toggleAccordion(header) {
+        const content = header.nextElementSibling;
+        const icon = header.querySelector('.icon-rotate');
+        const isNVR = header.dataset.type === 'nvr';
+        
+        // Simpan tinggi konten saat ini (penting untuk transisi)
+        const contentScrollHeight = content.scrollHeight; 
+
+        if (content.style.maxHeight && content.style.maxHeight !== '0px') {
+            // TUTUP
+            content.style.maxHeight = '0px';
+            if (icon) icon.style.transform = 'rotate(0deg)';
+            
+            // Jika NVR ditutup, perbarui tinggi Site parent
+            if (isNVR) {
+                updateParentMaxHeight(header, false, contentScrollHeight);
+            }
+        } else {
+            // BUKA
+            content.style.maxHeight = contentScrollHeight + "px";
+            if (icon) icon.style.transform = 'rotate(180deg)';
+
+            // Jika NVR dibuka, perbarui tinggi Site parent
+            if (isNVR) {
+                // Catatan: Karena NVR dibuka, NVR Parent (Site) juga harus sudah terbuka
+                updateParentMaxHeight(header, true, contentScrollHeight);
+            }
+            
+            // Jika Site dibuka, biarkan max-height-nya yang mengurus transisi NVR di dalamnya.
+        }
+    }
+    
+    // --- 2. LOGIKA VIDEO PLAYER ---
+    const videoStream = document.getElementById('video-stream');
+    const videoLoader = document.getElementById('video-loader');
+    const videoError = document.getElementById('video-error');
+    const videoTitle = document.getElementById('video-title');
+    const videoDesc = document.getElementById('video-desc');
+    const blinkRec = document.getElementById('blink-rec');
+    const cameraItems = document.querySelectorAll('.camera-list-item');
+    let currentCamId = null;
+
+    function resetVideoState() {
+        videoLoader.classList.remove('active');
+        videoStream.style.display = 'none';
+        videoError.style.display = 'none';
+        blinkRec.classList.remove('active');
+    }
+
+    function handleVideoError() {
+        resetVideoState();
+        videoError.style.display = 'flex';
+        // Hapus src supaya browser menghentikan stream (pesan error tetap tampil)
+        videoStream.removeAttribute('src');
+        console.error(`Stream error for Camera ID: ${currentCamId}`);
+    }
+
+    function retryStream() {
+        if (currentCamId) {
+            switchCamera(document.querySelector(`.camera-list-item[data-id="${currentCamId}"]`));
+        } else {
+            // Jika tidak ada kamera yang dipilih, kembali ke default
+            videoTitle.innerHTML = `<i class="fas fa-tv mr-2"></i>Pilih Kamera`;
+            videoDesc.innerText = 'Silakan pilih kamera dari daftar.';
+            videoStream.removeAttribute('src');
+        }
+    }
+
+    videoStream.onload = function() {
+        // Hanya stream kamera yang dimuat ke elemen ini
+        videoLoader.classList.remove('active');
+        videoStream.style.display = 'block';
+        videoError.style.display = 'none';
+        blinkRec.classList.add('active');
+    };
+
+    videoStream.onerror = function() {
+         // Tanpa src (stream sudah dihentikan) -> abaikan
+         if (!videoStream.getAttribute('src')) return;
+         // Tunda sedikit untuk memberi waktu koneksi stream (M-JPEG stream)
+         // Error biasanya terdeteksi sangat cepat
+         setTimeout(handleVideoError, 1500); 
+    };
+
+    function switchCamera(element) {
+        cameraItems.forEach(el => el.classList.remove('active'));
+        element.classList.add('active');
+        
+        resetVideoState();
+        videoLoader.classList.add('active'); // Aktifkan loader
+        
+        const camId = element.dataset.id;
+        currentCamId = camId; // Simpan ID kamera yang aktif
+        const camName = element.dataset.name;
+        const camDesc = element.dataset.desc;
+
+        videoTitle.innerHTML = `<i class="fas fa-eye mr-2 text-success"></i>${camName}`;
+        videoDesc.innerText = camDesc;
+        
+        // Ganti src untuk memuat stream baru
+        // Gunakan parameter t untuk memaksa browser memuat ulang stream (menghindari cache)
+        videoStream.src = `/video_feed/${camId}?t=${new Date().getTime()}`;
+        
+        // Scroll ke view video pada mobile
+        if(window.innerWidth < 768) {
+            document.getElementById('videoWrapper').scrollIntoView({behavior: "smooth", block: "center"});
+        }
+    }
+
+    // --- 3. FULLSCREEN ---
+    function toggleFullscreen() {
+        const elem = document.getElementById("videoWrapper");
+        if (!document.fullscreenElement) {
+            elem.requestFullscreen().catch(err => {
+                alert(`Error: ${err.message}`);
+            });
+        } else {
+            document.exitFullscreen();
+        }
+    }
+
+    // --- 4. INITIALIZATION ---
+    document.addEventListener('DOMContentLoaded', function () {
+        // Event Listener untuk Kamera
+        cameraItems.forEach(item => {
+            item.addEventListener('click', function() {
+                switchCamera(this);
+            });
+        });
+
+        // Event Listener untuk Accordion (Site dan NVR)
+        document.querySelectorAll('.accordion-header, .nvr-accordion-header').forEach(header => {
+            header.addEventListener('click', (e) => {
+                // Pastikan klik tidak terjadi pada elemen interaktif lain
+                if(e.target.closest('a') === null && e.target.closest('button') === null) {
+                    toggleAccordion(header);
+                }
+            });
+        });
+
+        // Auto-Play Kamera Pertama
+        if (cameraItems.length > 0) {
+            const firstCam = cameraItems[0];
+            
+            // Cari header Site dan NVR parent untuk auto-expand
+            let nvrContent = firstCam.closest('.nvr-accordion-content');
+            let siteContent = firstCam.closest('.accordion-content');
+
+            // Buka Site terlebih dahulu
+            if (siteContent && siteContent.style.maxHeight === '0px') {
+                 // Memastikan Site terbuka penuh sebelum NVR
+                 let siteHeader = siteContent.previousElementSibling;
+                 siteContent.style.maxHeight = siteContent.scrollHeight + "px"; // Buka Site
+                 if (siteHeader.querySelector('.icon-rotate')) siteHeader.querySelector('.icon-rotate').style.transform = 'rotate(180deg)';
+            }
+            
+            // Buka NVR (yang akan memperbarui max-height Site secara dinamis via toggleAccordion)
+            if (nvrContent && nvrContent.style.maxHeight === '0px') {
+                 toggleAccordion(nvrContent.previousElementSibling);
+            }
+
+            // Trigger switch
+            switchCamera(firstCam);
+        } else {
+             // Tidak ada kamera: tidak ada stream yang dimuat
+             videoStream.removeAttribute('src');
+        }
+    });
+</script>
+{% endblock javascripts %}

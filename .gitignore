@@ -1,0 +1,35 @@
+# ---- Python cache ----
+__pycache__/
+*.py[cod]
+
+# ---- Build output (PyInstaller / Inno Setup) ----
+build/
+dist/
+Output/
+
+# ---- Runtime data & secrets (created by SMC on each install) ----
+config.ini
+system_data/
+data_storage/
+app_logs/
+apps/static/screenshots/
+probe_output/
+det/
+
+# ---- Logs, exports, backups ----
+*.log
+*.xlsx
+*.xlsm
+*.zip
+*.dump
+
+# ---- Local environment ----
+.env
+.venv/
+venv/
+
+# ---- Editor / OS ----
+.vscode/
+.idea/
+Thumbs.db
+desktop.ini

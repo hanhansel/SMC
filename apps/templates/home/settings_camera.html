@@ -1,0 +1,591 @@
+{% extends "layouts/base.html" %}
+{% block title %}Camera Settings{% endblock %}
+{% block content %}
+<link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.css">
+<!-- SortableJS -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.7/Sortable.min.js"></script>
+<style>
+    .btn-xs {
+        padding: 0.25rem 0.5rem;
+        font-size: 0.75rem;
+        line-height: 1.5;
+        border-radius: 0.2rem;
+    }
+
+    .input-group-text {
+        border-left: 0;
+    }
+
+    .input-group .form-control {
+        border-right: 0;
+    }
+
+    .schedule-box {
+        display: none;
+        background: #f8f9fa;
+        border: 1px dashed #ccc;
+        padding: 15px;
+        border-radius: 8px;
+        margin-top: 10px;
+    }
+</style>
+
+<div class="container-settings">
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    {% for category, message in messages %}
+    <div class="alert alert-{{ category }} alert-dismissible fade show" role="alert">
+        {{ message }}
+        <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span
+                aria-hidden="true">&times;</span></button>
+    </div>
+    {% endfor %}
+    {% endif %}
+    {% endwith %}
+
+    <h3 class="mb-4">⚙️ Pengaturan NVR & Site</h3>
+
+    <div class="d-flex justify-content-between align-items-center mb-4">
+        <p class="text-muted mb-0">Kelola master data Site dan NVR Anda di sini.</p>
+        <div>
+            <button class="btn btn-success font-weight-bold shadow-sm" data-toggle="modal"
+                data-target="#importExcelModal">
+                <i class="feather icon-upload-cloud mr-1"></i> Import dari Excel
+            </button>
+            <a href="{{ url_for('home_blueprint.download_nvr_template') }}"
+                class="btn btn-outline-info font-weight-bold shadow-sm ml-2">
+                <i class="feather icon-download mr-1"></i> Download Template
+            </a>
+        </div>
+    </div>
+
+    <div class="modal fade" id="importExcelModal" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="POST" action="{{ url_for('home_blueprint.import_nvr_excel') }}"
+                    enctype="multipart/form-data">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title text-white"><i class="feather icon-file-text"></i> Import Data Site & NVR
+                        </h5>
+                        <button type="button" class="close text-white" data-dismiss="modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="alert alert-info">
+                            <i class="feather icon-info"></i> Pastikan format kolom Excel Anda sesuai dengan template
+                            standar sistem. Sistem akan otomatis membuat Site jika belum ada, dan membuat otomatis NVR
+                            beserta seluruh Channel-nya.
+                        </div>
+                        <div class="form-group mt-3">
+                            <label class="font-weight-bold">Upload File Excel (.xlsx)</label>
+                            <input type="file" class="form-control-file border p-2 rounded" name="excel_file"
+                                accept=".xlsx, .xls" required>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-success"
+                            onclick="return confirm('Mulai proses import? Proses ini mungkin memakan waktu beberapa detik tergantung jumlah data.');">Mulai
+                            Import</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-6 col-md-12 mb-4">
+            <div class="card shadow border-primary">
+                <div class="card-header bg-primary text-white">➕ Tambah Site Baru</div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('home_blueprint.add_site') }}">
+                        <div class="form-group">
+                            <label class="form-control-label">Nama Site</label>
+                            <input type="text" class="form-control" name="site_name" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-control-label">Lokasi / Area</label>
+                            <input type="text" class="form-control" name="location_name" required>
+                        </div>
+
+                        <div class="form-group mt-3">
+                            <div class="custom-control custom-switch">
+                                <input type="checkbox" class="custom-control-input" id="ai_report_enabled"
+                                    name="ai_report_enabled">
+                                <label class="custom-control-label" for="ai_report_enabled">Aktifkan AI Report NVR
+                                    Offline</label>
+                            </div>
+                        </div>
+
+                        <div class="custom-control custom-switch mt-2">
+                            <input type="checkbox" class="custom-control-input toggle-schedule" id="is_daily_report"
+                                name="is_daily_report" data-target="scheduleBoxAdd">
+                            <label class="custom-control-label" for="is_daily_report">Aktifkan Daily Report
+                                Scheduling</label>
+                        </div>
+
+                        <div id="scheduleBoxAdd" class="schedule-box">
+                            <div class="form-group">
+                                <label class="form-control-label">Hari Pengecekan</label><br>
+                                {% set days = ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
+                                {% for d in days %}
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" name="report_days" value="{{ d }}">
+                                    <label class="form-check-label">{{ d }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="form-group">
+                                <label class="form-control-label">Jam Pengecekan (WIB)</label>
+                                <input type="text" class="form-control w-50 time-picker" name="daily_report_time"
+                                    placeholder="Pilih Jam (24H)">
+                            </div>
+                        </div>
+
+                        <button type="submit" class="btn btn-primary mt-3">Simpan Site</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6 col-md-12 mb-4">
+            <div class="card shadow border-success">
+                <div class="card-header bg-success text-white">Tambah NVR</div>
+                <div class="card-body">
+                    <form method="POST" action="{{ url_for('home_blueprint.add_camera') }}">
+                        <div class="form-group">
+                            <label class="form-control-label">Pilih Site</label>
+                            <select name="site_id" class="form-control" required>
+                                <option value="">Pilih Site</option>
+                                {% for site in sites %}
+                                <option value="{{ site.id }}">{{ site.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-control-label">Nama Perangkat (NVR)</label>
+                            <input type="text" class="form-control" name="camera_name" required>
+                        </div>
+                        <input type="hidden" name="device_type" value="NVR">
+                        <input type="hidden" name="channel" value="1">
+                        <div class="form-group">
+                            <label class="form-control-label">Model Perangkat</label>
+                            <select name="camera_type" class="form-control">
+                                <option value="">-- Pilih Model --</option>
+                                <option value="UNV">UNV</option>
+                                <option value="HIKVISION">HIKVISION</option>
+                                <option value="Lainnya">Lainnya</option>
+                            </select>
+                        </div>
+                        <div class="form-group" id="channel_group">
+                            <label class="form-control-label">Jumlah Channel NVR</label>
+                            <select name="channel_count" class="form-control">
+                                <option value="">-- Pilih Channel --</option>
+                                <option value="4">4 Channel</option>
+                                <option value="8">8 Channel</option>
+                                <option value="16">16 Channel</option>
+                                <option value="32">32 Channel</option>
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-control-label">Username</label>
+                            <input type="text" class="form-control" name="username" required>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-control-label">Password</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" name="password" id="addNvrPassword"
+                                    required>
+                                <div class="input-group-append">
+                                    <span class="input-group-text bg-white"
+                                        onclick="togglePassword('addNvrPassword', 'iconAddNvr')"
+                                        style="cursor: pointer; border-left: none;">
+                                        <i class="feather icon-eye" id="iconAddNvr"></i>
+                                    </span>
+                                </div>
+                            </div>
+                        </div>
+                        <div class="form-group">
+                            <label class="form-control-label">IP Address</label>
+                            <input type="text" class="form-control" name="ip_address" placeholder="Contoh: 192.168.1.10"
+                                required>
+                        </div>
+                        <button class="btn btn-success btn-block mt-3">Tambah Perangkat</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <hr>
+    <h4 class="mb-3">Daftar Site Terdaftar</h4>
+
+    {% if sites %}
+    {% for site in sites %}
+    <div class="card mb-4 shadow">
+        <div class="card-header bg-white d-flex justify-content-between align-items-center p-3">
+            <div class="d-flex align-items-center">
+                <h5 class="mb-0 text-dark mr-3">{{ site.name }}</h5>
+                <small class="badge badge-info text-capitalize">{{ site.address }}</small>
+            </div>
+            <div>
+                <button class="btn btn-sm btn-warning" data-toggle="modal" data-target="#editSiteModal_{{ site.id }}">✏️
+                    Edit Site</button>
+                <form method="POST" action="{{ url_for('home_blueprint.delete_site', site_id=site.id) }}"
+                    style="display:inline-block;">
+                    <button class="btn btn-sm btn-danger"
+                        onclick="return confirm('Yakin hapus site ini? Semua NVR di dalamnya juga akan terhapus.')">🗑️
+                        Hapus Site</button>
+                </form>
+            </div>
+        </div>
+
+        <div class="card-body pt-2">
+            <div class="row mb-3">
+                <div class="col-md-4">
+                    <p><strong>Schedule:</strong> <span class="badge badge-secondary">{{ site.report_days or 'Tidak
+                            dijadwalkan' }} ({{ site.daily_report_time or '--:--' }})</span></p>
+                </div>
+                <div class="col-md-4">
+                    <p><strong>AI Report:</strong> {% if site.ai_report_enabled %}<span
+                            class="badge badge-success">Enabled</span>{% else %}<span
+                            class="badge badge-light">Disabled</span>{% endif %}</p>
+                </div>
+                <div class="col-md-4">
+                    <p><strong>Daily Report:</strong> {% if site.is_daily_report %}<span
+                            class="badge badge-primary">Enabled</span>{% else %}<span
+                            class="badge badge-light">Disabled</span>{% endif %}</p>
+                </div>
+            </div>
+
+            <h6 class="mt-3 mb-2 text-primary">Daftar Perangkat (NVR) di {{ site.name }}:</h6>
+            <div class="table-responsive">
+                <table class="table table-striped table-hover table-sm" id="dataTable_{{ site.id }}">
+                    <thead class="thead-light">
+                        <tr>
+                            <th style="width: 40px;"></th> <!-- Kolom handle drag -->
+                            <th>#</th>
+                            <th>Nama Perangkat</th>
+                            <th>Tipe</th>
+                            <th>Channel Count</th>
+                            <th>Model</th>
+                            <th>IP Address</th>
+                            <th class="text-center">Aksi</th>
+                        </tr>
+                    </thead>
+                    <tbody class="sortable-nvr-list" data-site-id="{{ site.id }}">
+                        {% set ns = namespace(count=0) %}
+                        {% for cam in cameras if cam.site_id == site.id %}
+                        {% set ns.count = ns.count + 1 %}
+                        <tr data-id="{{ cam.id }}">
+                            <td class="text-center" style="cursor: grab; color: #aaa;"><i class="feather icon-menu"></i></td>
+                            <td>{{ loop.index }}</td>
+                            <td>{{ cam.name }}</td>
+                            <td><span class="badge badge-primary">NVR</span></td>
+                            <td><span class="badge badge-dark">{{ cam.channel_count or cam.channel or 1 }}</span></td>
+                            <td>{{ cam.model or '-' }}</td>
+                            <td><code>{{ cam.ip_address }}</code></td>
+                            <td class="text-center">
+                                <button class="btn btn-xs btn-warning" data-toggle="modal"
+                                    data-target="#editCameraModal_{{ cam.id }}">Edit</button>
+                                <form method="POST"
+                                    action="{{ url_for('home_blueprint.delete_camera', camera_id=cam.id) }}"
+                                    style="display:inline-block;">
+                                    <button class="btn btn-xs btn-danger"
+                                        onclick="return confirm('Yakin hapus NVR ini?')">Hapus</button>
+                                </form>
+                            </td>
+                        </tr>
+                        {% endfor %}
+                        {% if ns.count == 0 %}<tr>
+                            <td colspan="7" class="text-center text-muted">Belum ada NVR terdaftar untuk site ini.</td>
+                        </tr>{% endif %}
+                    </tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    {# MODAL EDIT SITE #}
+    <div class="modal fade" id="editSiteModal_{{ site.id }}" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="POST" action="{{ url_for('home_blueprint.edit_site_post', site_id=site.id) }}">
+                    <div class="modal-header bg-warning text-dark">
+                        <h5 class="modal-title">Edit Site: {{ site.name }}</h5><button type="button" class="close"
+                            data-dismiss="modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group"><label>Nama Site</label><input type="text" class="form-control"
+                                name="edited_site_name" value="{{ site.name }}" required></div>
+                        <div class="form-group"><label>Lokasi</label><input type="text" class="form-control"
+                                name="edited_location_name" value="{{ site.address }}" required></div>
+                        <div class="form-group">
+                            <div class="custom-control custom-switch">
+                                <input type="checkbox" class="custom-control-input" id="edited_ai_{{ site.id }}"
+                                    name="edited_ai_report_enabled" {% if site.ai_report_enabled %}checked{% endif %}>
+                                <label class="custom-control-label" for="edited_ai_{{ site.id }}">Aktifkan AI
+                                    Report</label>
+                            </div>
+                        </div>
+                        <div class="custom-control custom-switch mt-2">
+                            <input type="checkbox" class="custom-control-input toggle-schedule"
+                                id="edited_daily_{{ site.id }}" name="edited_is_daily_report" {% if site.is_daily_report
+                                %}checked{% endif %} data-target="scheduleBoxEdit_{{ site.id }}">
+                            <label class="custom-control-label" for="edited_daily_{{ site.id }}">Aktifkan Daily Report
+                                Scheduling</label>
+                        </div>
+
+                        <div id="scheduleBoxEdit_{{ site.id }}" class="schedule-box"
+                            style="{% if site.is_daily_report %}display:block;{% endif %}">
+                            <div class="form-group">
+                                <label>Jadwal Report NVR</label><br>
+                                {% set current_report_days = site.report_days.split(',') if site.report_days else [] %}
+                                {% for d in ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'] %}
+                                <div class="form-check form-check-inline">
+                                    <input class="form-check-input" type="checkbox" name="edited_report_days"
+                                        value="{{ d }}" {% if d in current_report_days %}checked{% endif %}>
+                                    <label class="form-check-label">{{ d }}</label>
+                                </div>
+                                {% endfor %}
+                            </div>
+                            <div class="form-group">
+                                <label>Jam Pengecekan (WIB)</label>
+                                <input type="text" class="form-control w-50 time-picker" name="edited_daily_report_time"
+                                    value="{{ site.daily_report_time or '' }}" placeholder="Pilih Jam (24H)">
+                            </div>
+                        </div>
+                    </div>
+                    <div class="modal-footer"><button class="btn btn-secondary"
+                            data-dismiss="modal">Batal</button><button type="submit" class="btn btn-success">Simpan
+                            Perubahan</button></div>
+                </form>
+            </div>
+        </div>
+    </div>
+
+    {# MODAL EDIT CAMERA/NVR #}
+    {% for cam in cameras if cam.site_id == site.id %}
+    <div class="modal fade" id="editCameraModal_{{ cam.id }}" tabindex="-1">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <form method="POST" action="{{ url_for('home_blueprint.edit_camera_post', camera_id=cam.id) }}">
+                    <div class="modal-header bg-success text-white">
+                        <h5 class="modal-title">Edit Perangkat: {{ cam.name }} (Ch Count: {{ cam.channel_count or
+                            cam.channel or 1 }})</h5>
+                        <button type="button" class="close" data-dismiss="modal">&times;</button>
+                    </div>
+                    <div class="modal-body">
+                        <div class="form-group"><label>Nama Perangkat (NVR)</label><input type="text"
+                                class="form-control" name="edited_camera_name" value="{{ cam.name }}" required></div>
+                        <input type="hidden" name="edited_device_type" value="NVR"><input type="hidden"
+                            name="edited_channel" value="{{ cam.channel or 1 }}">
+                        <div class="form-group edit-channel-group" id="edited_channel_group_{{ cam.id }}">
+                            <label>Jumlah Channel NVR</label>
+                            <select name="edited_channel_count" class="form-control">
+                                <option value="">-- Pilih Channel --</option>
+                                {% for ch in [4, 8, 16, 32] %}<option value="{{ ch }}" {% if cam.channel_count and
+                                    cam.channel_count|int==ch %}selected{% endif %}>{{ ch }} Channel</option>{% endfor
+                                %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label>Model Perangkat</label>
+                            <select name="edited_camera_type" class="form-control">
+                                <option value="">-- Pilih Model --</option>
+                                {% for model in ['UNV', 'HIKVISION', 'Lainnya'] %}<option value="{{ model }}"
+                                    {% if cam.model==model %}selected{% endif %}>{{ model }}</option>{% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group"><label>RTSP Username</label><input type="text" class="form-control"
+                                name="edited_username" value="{{ cam.username or '' }}" required></div>
+
+                        <div class="form-group">
+                            <label>RTSP Password Baru</label>
+                            <div class="input-group">
+                                <input type="password" class="form-control" name="edited_password"
+                                    placeholder="*** (Biarkan kosong jika tidak ganti)"
+                                    id="editNvrPassword_{{ cam.id }}">
+                                <div class="input-group-append">
+                                    <span class="input-group-text bg-white"
+                                        onclick="togglePassword('editNvrPassword_{{ cam.id }}', 'iconEditNvr_{{ cam.id }}')"
+                                        style="cursor: pointer; border-left: none;">
+                                        <i class="feather icon-eye" id="iconEditNvr_{{ cam.id }}"></i>
+                                    </span>
+                                </div>
+                            </div>
+                            <small class="text-danger">*Password asli dienkripsi di server, isi baru jika ingin
+                                mengganti.</small>
+                        </div>
+
+                        <div class="form-group"><label>RTSP / IP</label><input type="text" class="form-control"
+                                name="edited_ip_address" value="{{ cam.ip_address }}" required></div>
+                        <div class="form-group">
+                            <label>Pilih Site</label>
+                            <select name="edited_site_id" class="form-control" required>
+                                {% for s in sites %}<option value="{{ s.id }}" {% if cam.site_id==s.id %}selected{%
+                                    endif %}>{{ s.name }}</option>{% endfor %}
+                            </select>
+                        </div>
+                    </div>
+                    <div class="modal-footer"><button class="btn btn-secondary"
+                            data-dismiss="modal">Batal</button><button type="submit" class="btn btn-success">Simpan
+                            Perubahan</button></div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endfor %}
+    {% endfor %}
+    {% else %}
+    <div class="alert alert-info shadow-sm" role="alert">Belum ada Site yang terdaftar. Silakan tambahkan Site baru di
+        formulir atas.</div>
+    {% endif %}
+
+    <!-- PANEL BACKUP & RESTORE KUNCI ENKRIPSI -->
+    <hr class="mt-5 mb-4">
+    <div class="row">
+        <div class="col-12 mb-4">
+            <div class="card shadow border-danger">
+                <div class="card-header bg-danger text-white font-weight-bold">
+                    <i class="feather icon-shield"></i> Keamanan Password
+                </div>
+                <div class="card-body">
+                    <div class="alert alert-warning">
+                        </i> Note:</strong>
+                        Sistem SMC menggunakan kunci lokal untuk mengunci
+                        seluruh password di Database. Jika server dipindahkan atau melakukan instalasi
+                        ulang, jangan lupa mempakai kunci ini.
+                    </div>
+
+                    <div class="row">
+                        <!-- BAGIAN BACKUP -->
+                        <div class="col-md-6 border-right">
+                            <h5 class="font-weight-bold text-info"><i class="feather icon-download"></i> Backup Kunci
+                                Enkripsi</h5>
+                            <p class="text-muted small">Unduh file kunci sistem.</p>
+                            <a href="{{ url_for('home_blueprint.download_sys_key') }}"
+                                class="btn btn-info font-weight-bold">
+                                Download .sys_config.key
+                            </a>
+                        </div>
+
+                        <!-- BAGIAN RESTORE -->
+                        <div class="col-md-6">
+                            <h5 class="font-weight-bold text-success"><i class="feather icon-upload"></i> Restore Kunci
+                                Lama</h5>
+                            <p class="text-muted small">Upload file backup kunci lama Anda.</p>
+                            <form action="{{ url_for('home_blueprint.upload_sys_key') }}" method="POST"
+                                enctype="multipart/form-data" class="d-flex align-items-center">
+                                <input type="file" name="key_file" class="form-control-file mr-2" accept=".key"
+                                    required>
+                                <button type="submit" class="btn btn-success font-weight-bold"
+                                    onclick="return confirm('PERINGATAN: Mengunggah kunci baru akan menimpa kunci saat ini. Password NVR yang diinput setelah server pindah (dengan kunci baru) mungkin akan rusak. Lanjutkan?');">
+                                    Restore Kunci
+                                </button>
+                            </form>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+{% endblock %}
+
+{% block javascripts %}
+{{ super() }}
+<script src="https://cdn.jsdelivr.net/npm/flatpickr@4.6.13/dist/flatpickr.min.js"></script>
+
+<script>
+    $(document).ready(function () {
+        // Flatpickr (format 24 jam)
+        $('.time-picker').flatpickr({
+            enableTime: true,
+            noCalendar: true,
+            dateFormat: "H:i",
+            time_24hr: true
+        });
+
+        // Inisialisasi DataTables
+        {% for site in sites %}
+        if ($('#dataTable_{{ site.id }}').length) {
+            $('#dataTable_{{ site.id }}').DataTable({ "paging": true, "lengthChange": false, "searching": true, "ordering": true, "info": true, "autoWidth": false, "responsive": true, "pageLength": 5 });
+        }
+        {% endfor %}
+
+        // Status awal dibaca dengan .prop() dan .attr() (lebih stabil dari .is() / .data())
+        $('.toggle-schedule').each(function () {
+            var targetId = $(this).attr('data-target');
+            if ($(this).prop('checked')) {
+                $('#' + targetId).show();
+            } else {
+                $('#' + targetId).hide();
+            }
+        });
+    });
+
+    // Event delegation: tetap berfungsi untuk switch Bootstrap & elemen di dalam modal
+    $(document).on('change', '.toggle-schedule', function () {
+        var targetId = $(this).attr('data-target');
+        if ($(this).prop('checked')) {
+            $('#' + targetId).slideDown(300);
+        } else {
+            $('#' + targetId).slideUp(300);
+        }
+    });
+
+    function togglePassword(inputId, iconId) {
+        var input = document.getElementById(inputId);
+        var icon = document.getElementById(iconId);
+        if (input && icon) {
+            if (input.type === "password") {
+                input.type = "text";
+                icon.classList.remove("icon-eye");
+                icon.classList.add("icon-eye-off");
+            } else {
+                input.type = "password";
+                icon.classList.remove("icon-eye-off");
+                icon.classList.add("icon-eye");
+            }
+        }
+    }
+</script>
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    // Inisialisasi Sortable untuk setiap tabel NVR
+    document.querySelectorAll('.sortable-nvr-list').forEach(function(tbody) {
+        new Sortable(tbody, {
+            animation: 150,
+            handle: '.feather.icon-menu', // Handle khusus icon drag
+            onEnd: function(evt) {
+                // Saat drag selesai, kumpulkan ID dalam urutan baru
+                let order = [];
+                tbody.querySelectorAll('tr[data-id]').forEach(function(row) {
+                    order.push(row.getAttribute('data-id'));
+                });
+                
+                // Kirim urutan baru ke backend
+                fetch("{{ url_for('home_blueprint.update_nvr_order') }}", {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ order: order })
+                })
+                .then(response => response.json())
+                .then(data => {
+                    if(!data.success) {
+                        alert("Gagal menyimpan urutan: " + data.message);
+                    }
+                })
+                .catch(err => {
+                    console.error('Error:', err);
+                });
+            }
+        });
+    });
+});
+</script>
+{% endblock %}

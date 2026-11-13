@@ -1,0 +1,496 @@
+{% extends "layouts/base.html" %}
+{% block title %}Dashboard Monitoring Kamera Real-Time{% endblock %}
+{% block content %}
+
+{# Loading Overlay #}
+<div id="global-loading-overlay" style="display: none;">
+    <div class="spinner-border text-primary" role="status" style="width: 3rem; height: 3rem;">
+        <span class="sr-only">Memuat...</span>
+    </div>
+    <p class="mt-3 text-white">Sedang mengambil data terbaru...</p>
+</div>
+
+<style>
+/* CSS Khusus Dashboard */
+#global-loading-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background-color: rgba(0, 0, 0, 0.7); 
+    z-index: 1050; 
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: center;
+    color: white;
+    font-size: 1.2rem;
+}
+
+.container-dashboard .btn-sm {
+    font-size: 0.7rem;         
+    padding: 6px 6px;          
+}
+
+.site-card-header {
+    background-color: #2c3e50;
+    color: white;
+    font-weight: bold;
+}
+.container-dashboard h3 {
+    font-size: 1.75rem; 
+    font-weight: 600;
+}
+.device-card {
+    border-radius: 0.5rem;
+    transition: transform 0.2s, box-shadow 0.2s;
+    margin-bottom: 10px;
+    border-left: 5px solid; 
+}
+.device-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+}
+.status-badge {
+    padding: 0.5em 0.7em;
+    font-size: 0.75rem; 
+    font-weight: 700;
+    border-radius: 0.5rem;
+}
+
+/* Status Colors */
+.status-Online { background-color: #4CAF50; color: white; }
+.border-Online { border-left-color: #4CAF50; }
+.status-Offline { background-color: #F44336; color: white; animation: blink 1s step-start infinite; }
+.border-Offline { border-left-color: #F44336; }
+.status-Abnormal { background-color: #FFC107; color: #333; }
+.border-Abnormal { border-left-color: #FFC107; }
+.status-Unknown { background-color: #9E9E9E; color: white; }
+.status-Uncheckable { background-color: #FFC000; color: #000; }
+.border-Uncheckable { border-left-color: #FFC000; }
+.bg-channel-Uncheckable { background-color: #fff3d6; }
+.channel-item.Uncheckable { border-left-color: #FFC000; }
+.border-Unknown { border-left-color: #9E9E9E; }
+
+@keyframes blink {
+    50% { opacity: 0.6; }
+}
+
+.channel-list {
+    list-style: none;
+    padding-left: 0;
+    margin-top: 10px;
+}
+.channel-item {
+    padding: 5px 15px;
+    border-left: 3px solid;
+    margin-bottom: 3px;
+    font-size: 0.8em;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+}
+.bg-channel-Online { background-color: #e8f5e9; }
+.bg-channel-Offline { background-color: #ffebee; }
+.bg-channel-Abnormal { background-color: #fff8e1; }
+.bg-channel-Unknown { background-color: #f5f5f5; }
+
+.channel-item.Online { border-left-color: #4CAF50; }
+.channel-item.Offline { border-left-color: #F44336; }
+.channel-item.Abnormal { border-left-color: #FFC107; }
+.channel-item.Unknown { border-left-color: #9E9E9E; }
+</style>
+
+<div class="container-dashboard">
+    <h3 class="mb-4">Sistem Monitoring CCTV (SMC) <span id="last-update-time" class="badge badge-secondary ml-2" style="font-size: 0.5em;">Memuat Waktu...</span>
+        
+        <div class="float-right btn-group">
+            {% if current_user.can_manage_users %}
+            <button type="button" class="btn btn-sm btn-info" id="btn-update-weekly-report">
+                <i class="fas fa-history mr-1"></i> Update To Report
+            </button>
+
+            {% if scan_run %}
+            <button type="button" class="btn btn-sm btn-outline-secondary ml-2" data-toggle="modal" data-target="#scanResultModal">
+                <i class="fas fa-list mr-1"></i> Hasil Scan Terakhir
+            </button>
+            {% endif %}
+            <form method="POST" action="{{ url_for('home_blueprint.trigger_status_check') }}" class="inline ml-2" id="manual-update-form">
+                <button type="submit" class="btn btn-sm btn-success" id="btn-update-manual">
+                    <i class="fas fa-sync-alt mr-1"></i> Update Manual
+                </button>
+            </form>
+            {% endif %}
+        </div>
+    </h3>
+
+    {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+            {% for category, message in messages %}
+                {% set alert_class = 'alert-success' if category == 'success' else 'alert-danger' %}
+                <div class="alert {{ alert_class }} alert-dismissible fade show" role="alert">
+                    {{ message }}
+                    <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+            {% endfor %}
+        {% endif %}
+    {% endwith %}
+
+    {% include 'home/_scan_popup.html' %}
+
+    {% if sites %}
+        <div id="siteAccordion">
+        {% for site in sites %}
+            <div class="card mb-3 shadow-lg">
+                <div class="card-header site-card-header" id="headingSite{{ site.id }}">
+                    <h2 class="mb-0">
+                        <button class="btn btn-block text-left" type="button" data-toggle="collapse" data-target="#collapseSite{{ site.id }}" aria-expanded="true" aria-controls="collapseSite{{ site.id }}">
+                            <i class="fas fa-map-marker-alt mr-2"></i> <strong>{{ site.name }}</strong> <small class="text-black-50 ml-3">({{ site.address }})</small>
+                            {% set site_cameras = cameras | selectattr('site_id', '==', site.id) | selectattr('channel', '==', 0) | list if cameras is defined else [] %}
+                            <span class="badge badge-light float-right">{{ site_cameras | length }} Perangkat</span>
+                        </button>
+                    </h2>
+                </div>
+
+                <div id="collapseSite{{ site.id }}" class="collapse" aria-labelledby="headingSite{{ site.id }}" data-parent="#siteAccordion">
+                    <div class="card-body">
+                        <div class="row">
+                            {% if site_cameras %}
+                                {% for cam in site_cameras %}
+                                    {% set initial_status = latest_status_map.get(cam.id, {'status': 'Unknown', 'checked_at': 'N/A', 'details': 'Memuat status awal...'}) %}
+                                    {% set initial_status_key = initial_status.status %}
+                                    
+                                    <div class="col-xl-4 col-lg-6 col-md-12">
+                                        <div class="card device-card shadow-sm border-{{ initial_status_key }}" data-camera-id="{{ cam.id }}"> 
+                                            <div class="card-body p-3">
+                                                <div class="d-flex justify-content-between align-items-start">
+                                                    <div>
+                                                        <h5 class="card-title mb-1">
+                                                            {% if cam.device_type == 'NVR' %}
+                                                                <i class="fas fa-hdd text-primary mr-1"></i>
+                                                            {% else %}
+                                                                <i class="fas fa-video text-secondary mr-1"></i>
+                                                            {% endif %}
+                                                            {{ cam.name }}
+                                                        </h5>
+                                                        <p class="card-text text-muted mb-2" style="font-size: 0.85rem;">{{ cam.ip_address }} ({{ cam.device_type }})</p>
+                                                    </div>
+                                                    <span class="status-badge status-{{ initial_status_key }}" id="status-badge-{{ cam.id }}">
+                                                        {{ (STATUS_MAP.get(initial_status_key, {}).get('text_status') or initial_status_key) | upper }}
+                                                    </span>
+                                                </div>
+                                                
+                                                <p class="mb-0 mt-2 text-sm" style="font-size: 0.75rem;">
+                                                    Terakhir Cek: 
+                                                    <span id="checked-at-{{ cam.id }}" class="db-timestamp">{{ initial_status.checked_at }}</span>
+                                                </p>
+                                                <p class="mb-0 text-sm font-italic text-secondary" style="font-size: 0.75rem;">
+                                                    Detail: 
+                                                    <span id="details-{{ cam.id }}">{{ initial_status.details }}</span>
+                                                </p>
+
+                                                {% if cam.device_type == 'NVR' and cam.channel_count %}
+                                                    <hr class="my-2">
+                                                    <div id="channelDetails_{{ cam.id }}">
+                                                        <ul class="channel-list" id="channel-list-{{ cam.id }}">
+                                                            {% for i in range(1, (cam.channel_count | int) + 1) %}
+                                                                {% set default_ch_status = 'Unknown' %}
+                                                                <li class="channel-item {{ default_ch_status }} bg-channel-{{ default_ch_status }}" data-channel-num="{{ i }}">
+                                                                    <small>Channel {{ i }}</small>
+                                                                    <span class="badge badge-pill badge-secondary ml-auto">
+                                                                        {{ default_ch_status | upper }}
+                                                                    </span>
+                                                                </li>
+                                                            {% endfor %}
+                                                        </ul>
+                                                    </div>
+                                                {% endif %}
+                                            </div>
+                                        </div>
+                                    </div>
+                                {% endfor %}
+                            {% else %}
+                                <div class="col-12">
+                                    <div class="alert alert-warning">Tidak ada perangkat terdaftar untuk site ini.</div>
+                                </div>
+                            {% endif %}
+                        </div>
+                    </div>
+                </div>
+            </div>
+        {% endfor %}
+        </div>
+    {% else %}
+        <div class="alert alert-info shadow-sm" role="alert">
+            <h4 class="alert-heading">👋 Selamat Datang!</h4>
+            <p>Belum ada Site atau Perangkat yang terdaftar.</p>
+        </div>
+    {% endif %}
+
+</div>
+
+{% endblock %}
+
+{% block javascripts %}
+{% if show_scan_popup %}
+<script>
+    // Popup Hasil Scan dibuka otomatis sekali setelah Update Manual.
+    // Simpan jQuery yang sudah berisi plugin Bootstrap SEKARANG: halaman ini memuat ulang jQuery dari CDN
+    // di bawah, yang menimpa $ tanpa .modal().
+    (function (jqBootstrap) {
+        jqBootstrap(function () { jqBootstrap('#scanResultModal').modal('show'); });
+    })(window.jQuery);
+</script>
+{% endif %}
+    {{ super() }}
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/js/all.min.js"></script> 
+    <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+    
+    <script>
+        
+        const PYTHON_STATUS_MAP = {{ STATUS_MAP | tojson | safe }}; 
+        
+        const JS_STATUS_CLASSES = {};
+        const allStatusKeys = ['Online', 'Offline', 'Abnormal', 'Uncheckable', 'Unknown'];
+
+        for (const key of allStatusKeys) {
+            JS_STATUS_CLASSES[key] = {
+                badge_class: `status-${key}`,
+                border_class: `border-${key}`,
+                text_status: key.toUpperCase(),
+                channel_class: key, 
+                bg_channel_class: `bg-channel-${key}`,
+            };
+        }
+        
+        JS_STATUS_CLASSES['NO_DATA'] = JS_STATUS_CLASSES['Unknown'];
+        JS_STATUS_CLASSES['Uncheckable'].text_status = 'TIDAK BISA DICEK';
+
+        const getBootstrapBadgeClass = (statusKey) => {
+            if (statusKey === 'Online') return 'success';
+            if (statusKey === 'Offline') return 'danger';
+            if (statusKey === 'Abnormal' || statusKey === 'Uncheckable') return 'warning';
+            return 'secondary';
+        };
+
+        let isFirstLoad = true; 
+        const $globalOverlay = $('#global-loading-overlay');
+        const $manualUpdateBtn = $('#btn-update-manual');
+        const $weeklyReportBtn = $('#btn-update-weekly-report');
+
+        function showGlobalLoading(message) {
+            $globalOverlay.find('p').text(message || 'Sedang memuat...');
+            $globalOverlay.fadeIn(200);
+            $manualUpdateBtn.prop('disabled', true);
+            $weeklyReportBtn.prop('disabled', true);
+        }
+
+        function hideGlobalLoading() {
+            $globalOverlay.fadeOut(200);
+            if ($manualUpdateBtn.find('.spinner-border').length === 0) {
+                 $manualUpdateBtn.prop('disabled', false).html('<i class="fas fa-sync-alt mr-1"></i> Update Manual');
+            }
+            $weeklyReportBtn.prop('disabled', false).html('<i class="fas fa-history mr-1"></i> Update To Report');
+        }
+
+        // --- FUNGSI UPDATE TO REPORT ---
+        function triggerWeeklyReportSnapshot() {
+            const $btn = $('#btn-update-weekly-report');
+            $btn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Memproses...');
+
+            // AJAX ke endpoint 'update_to_report'
+            $.ajax({
+                url: '{{ url_for("home_blueprint.update_to_report") }}', 
+                method: 'POST',
+                success: function(response) {
+                    window.location.reload(); 
+                },
+                error: function(xhr) {
+                    if(xhr.status === 200 && xhr.responseText.includes("<!DOCTYPE html>")) {
+                         window.location.reload();
+                         return;
+                    }
+                    alert('❌ Terjadi kesalahan saat update report.');
+                },
+                complete: function() {
+                    $btn.prop('disabled', false).html('<i class="fas fa-history mr-1"></i> Update To Report');
+                }
+            });
+        }
+        
+        function setManualUpdateLoading() {
+            $manualUpdateBtn.prop('disabled', true).html('<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span> Memeriksa...');
+            showGlobalLoading("Sedang menjalankan pengecekan status kamera...");
+        }
+
+        // Format tanggal
+        function setHeaderTimestamp() {
+            let rawDate = "N/A";
+            
+            // Cari elemen pertama di layar yang menampung tanggal dari database
+            $('.db-timestamp').each(function() {
+                let txt = $(this).text().trim();
+                if (txt && txt !== 'N/A' && txt !== 'None') {
+                    rawDate = txt;
+                    return false; // hentikan loop kalau sudah ketemu 1 tanggal yang valid
+                }
+            });
+
+            let latestTimeStr = "Belum ada data";
+            if (rawDate !== 'N/A') {
+                try {
+                    // Raw Format: DD-MM-YYYY HH:MM:SS (Waktu UTC dari Database)
+                    let parts = rawDate.split(' ');
+                    let dateParts = parts[0].split('-');
+                    let timeParts = parts[1].split(':');
+
+                    // Ubah formatnya menjadi standar ISO UTC (tambahkan huruf 'T' dan 'Z')
+                    // Contoh: 2026-03-13T04:01:00Z
+                    let isoString = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}T${timeParts[0]}:${timeParts[1]}:${timeParts[2]}Z`;
+                    
+                    // JavaScript akan otomatis mengubah 'Z' (UTC) menjadi waktu lokal browser (+7 Jam untuk WIB)
+                    let localDate = new Date(isoString);
+
+                    let hari = localDate.getDate();
+                    let bulanIndex = localDate.getMonth();
+                    let tahun = localDate.getFullYear();
+                    
+                    // padStart untuk memastikan jam 9 menjadi '09'
+                    let jam = String(localDate.getHours()).padStart(2, '0');
+                    let menit = String(localDate.getMinutes()).padStart(2, '0');
+
+                    const bulanIndo = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+                    
+                    // Format akhir + keterangan WIB
+                    latestTimeStr = `${hari} ${bulanIndo[bulanIndex]}, ${tahun}, ${jam}:${menit} WIB`;
+                } catch (e) {
+                    latestTimeStr = rawDate; // Fallback jika format tidak dikenali
+                }
+            }
+            
+            $('#last-update-time').text('Terakhir Update: ' + latestTimeStr);
+        }
+
+        function updateDashboardStatus(data) {
+            const statusMap = data.status_map;
+            const updateTime = data.latest_report_time ? data.latest_report_time : "Memuat...";
+            $('#last-update-time').text('Terakhir Update: ' + updateTime);
+            // Format waktu statis (hanya panggil saat fungsi ini jalan, tidak detak per detik)
+
+            {% for cam in cameras %}
+                {% if cam.channel == 0 %}
+                    const cam_id_{{ cam.id }} = {{ cam.id }};
+                    const status_data_{{ cam.id }} = statusMap[cam_id_{{ cam.id }}];
+                    const $badge_{{ cam.id }} = $('#status-badge-' + cam_id_{{ cam.id }});
+                    const $card_{{ cam.id }} = $badge_{{ cam.id }}.closest('.device-card');
+                    const $checkedAt_{{ cam.id }} = $('#checked-at-' + cam_id_{{ cam.id }});
+                    const $details_{{ cam.id }} = $('#details-' + cam_id_{{ cam.id }});
+                    
+                    if (status_data_{{ cam.id }} && status_data_{{ cam.id }}.status) {
+                        const statusKey = status_data_{{ cam.id }}.status || 'Unknown';
+                        const classes = JS_STATUS_CLASSES[statusKey] || JS_STATUS_CLASSES['Unknown'];
+
+                        $badge_{{ cam.id }}.text(classes.text_status); 
+                        $badge_{{ cam.id }}.removeClass('status-Online status-Offline status-Abnormal status-Uncheckable status-Unknown').addClass(classes.badge_class);
+                        $card_{{ cam.id }}.removeClass('border-Online border-Offline border-Abnormal border-Uncheckable border-Unknown').addClass(classes.border_class);
+                        
+                        // Tanggal level NVR tetap memakai nilai dari DOM (API tidak mengirim tanggal)
+                        if(status_data_{{ cam.id }}.checked_at) {
+                            $checkedAt_{{ cam.id }}.text(status_data_{{ cam.id }}.checked_at);
+                        }
+                        
+                        $details_{{ cam.id }}.text(status_data_{{ cam.id }}.details || 'Tidak ada detail status.');
+
+                        {% if cam.device_type == 'NVR' %}
+                            const $channelList = $('#channel-list-' + cam_id_{{ cam.id }});
+                            const channelStatuses = status_data_{{ cam.id }}.child_channels || {}; 
+                            $channelList.find('.channel-item').each(function() {
+                                const $item = $(this);
+                                let rawChannelNum = $item.data('channel-num'); 
+                                const channelNumString = String(parseInt(rawChannelNum) || rawChannelNum); 
+                                let ch_status;
+                                const channelData = channelStatuses[channelNumString];
+                                if (statusKey === 'Offline' || statusKey === 'Unknown' || statusKey === 'Uncheckable') {
+                                    ch_status = statusKey; 
+                                } else {
+                                    ch_status = (channelData && channelData.status) ? channelData.status : 'Unknown';
+                                }
+                                const ch_classes = JS_STATUS_CLASSES[ch_status] || JS_STATUS_CLASSES['Unknown'];
+                                const bootstrap_badge_class = getBootstrapBadgeClass(ch_status);
+                                $item.removeClass('Online Offline Abnormal Uncheckable Unknown bg-channel-Online bg-channel-Offline bg-channel-Abnormal bg-channel-Uncheckable bg-channel-Unknown'); 
+                                $item.addClass(ch_classes.channel_class + ' ' + ch_classes.bg_channel_class);
+                                const $ch_badge = $item.find('.badge');
+                                $ch_badge.removeClass('badge-secondary badge-danger badge-success badge-warning');
+                                $ch_badge.addClass('badge-' + bootstrap_badge_class);
+                                $ch_badge.text(ch_classes.text_status);
+                            });
+                        {% endif %}
+                    } else {
+                        const noDataClasses = JS_STATUS_CLASSES['NO_DATA'];
+                        $badge_{{ cam.id }}.text(noDataClasses.text_status); 
+                        $badge_{{ cam.id }}.removeClass('status-Online status-Offline status-Abnormal status-Uncheckable status-Unknown').addClass(noDataClasses.badge_class);
+                        $card_{{ cam.id }}.removeClass('border-Online border-Offline border-Abnormal border-Uncheckable border-Unknown').addClass(noDataClasses.border_class);
+                        $checkedAt_{{ cam.id }}.text('N/A');
+                        $details_{{ cam.id }}.text('Status belum tersedia.');
+                        {% if cam.device_type == 'NVR' %}
+                            const unknownClasses = JS_STATUS_CLASSES['Unknown'];
+                            const bootstrap_badge_class = getBootstrapBadgeClass('Unknown');
+                            const $channelList = $('#channel-list-' + cam_id_{{ cam.id }});
+                            $channelList.find('.channel-item').each(function() {
+                                const $item = $(this);
+                                $item.removeClass('Online Offline Abnormal Uncheckable Unknown bg-channel-Online bg-channel-Offline bg-channel-Abnormal bg-channel-Uncheckable bg-channel-Unknown');
+                                $item.addClass(unknownClasses.channel_class + ' ' + unknownClasses.bg_channel_class);
+                                const $ch_badge = $item.find('.badge');
+                                $ch_badge.removeClass('badge-secondary badge-danger badge-success badge-warning');
+                                $ch_badge.addClass('badge-' + bootstrap_badge_class);
+                                $ch_badge.text(unknownClasses.text_status);
+                            });
+                        {% endif %}
+                    }
+                {% endif %}
+            {% endfor %}
+            
+            // Perbarui label waktu di header
+            setHeaderTimestamp();
+        }
+
+        function startPolling() {
+            if (isFirstLoad) {
+                showGlobalLoading("Memuat status awal...");
+            }
+            $.ajax({
+                url: '{{ url_for("home_blueprint.api_latest_status") }}',
+                method: 'GET',
+                success: function(data) {
+                    updateDashboardStatus(data);
+                },
+                error: function(xhr, status, error) {
+                    console.error("Gagal memuat status:", status, error);
+                    $('#last-update-time').text('Gagal memuat data');
+                },
+                complete: function() {
+                    if (isFirstLoad) {
+                        hideGlobalLoading();
+                        isFirstLoad = false;
+                    }
+                    setTimeout(startPolling, 10000); 
+                }
+            });
+        }
+        
+        $(document).ready(function() {
+            // Setel tanggal awal langsung saat halaman dimuat
+            setHeaderTimestamp();
+            
+            startPolling();
+            $('#btn-update-weekly-report').on('click', triggerWeeklyReportSnapshot);
+            $('#manual-update-form').on('submit', function(e) {
+                setManualUpdateLoading();
+            });
+            $('[data-toggle="tooltip"]').tooltip();
+        });
+    </script>
+{% endblock %}

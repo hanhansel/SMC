@@ -1,0 +1,388 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} AI Settings {% endblock %}
+
+{% block stylesheets %}
+    {{ super() }}
+    <style>
+        .form-check-label { cursor: pointer; }
+        .config-card { transition: all 0.3s; }
+        .config-card.active { border: 2px solid #5e72e4; }
+        .table-responsive-custom { max-height: 80vh; overflow-y: auto; }
+        /* Gaya tambahan untuk tombol collapse/expand */
+        .collapse-toggle { cursor: pointer; user-select: none; }
+        .collapse-icon { transition: transform 0.3s; }
+        /* Ikon akan diputar -90 derajat saat elemen dalam keadaan tertutup (collapsed) */
+        .collapse-icon.collapsed { transform: rotate(-90deg); }
+    </style>
+{% endblock stylesheets %}
+
+{% block content %}
+
+<div class="container-fluid py-4">
+    <div class="row">
+        
+        <div class="col-lg-4">
+            <div class="card shadow-sm mb-4">
+                <div class="card-header pb-0 bg-primary text-white">
+                    <h6 class="mb-0 text-white"><i class="fas fa-plus-circle mr-2"></i> Tambah / Edit Konfigurasi AI</h6>
+                </div>
+                <div class="card-body">
+                    <form id="aiConfigForm">
+                        <input type="hidden" id="camera_id_input" name="camera_id" value="">
+                        
+                        <h6 class="text-uppercase text-secondary font-weight-bolder mb-2">Data Kamera</h6>
+
+                        <div class="form-group">
+                            <label for="site_id">Site</label>
+                            <select class="form-control" id="site_id" name="site_id" required>
+                                <option value="">Pilih Site</option>
+                                {% for site in all_sites %}
+                                    <option value="{{ site.id }}">{{ site.name }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        
+                        <div class="form-group">
+                            <label for="camera_name">Nama Kamera/Channel</label>
+                            <input type="text" class="form-control" id="camera_name" name="name" placeholder="Contoh: Kamera Gudang 1" required disabled>
+                            <small class="text-muted">Gunakan tombol **Edit** pada tabel untuk mengisi otomatis nama.</small>
+                        </div>
+
+                        <div class="form-group">
+                            <label for="rtsp_url">RTSP URL Stream</label>
+                            <input type="text" class="form-control" id="rtsp_url" name="rtsp_url" placeholder="rtsp://user:pass@ip:port/channel">
+                        </div>
+
+                        <hr class="my-3">
+
+                        <h6 class="text-uppercase text-secondary font-weight-bolder mb-2">Pengaturan Deteksi AI</h6>
+                        
+                        <div class="row mb-3">
+                            <div class="col-sm-6">
+                                <div class="form-check">
+                                    <input class="form-check-input detection-toggle" type="checkbox" id="detect_people" name="detect_people">
+                                    <label class="form-check-label" for="detect_people">
+                                        👨‍ Deteksi Orang
+                                    </label>
+                                </div>
+                            </div>
+                            <div class="col-sm-6">
+                                <div class="form-check">
+                                    <input class="form-check-input detection-toggle" type="checkbox" id="detect_helmet" name="detect_helmet">
+                                    <label class="form-check-label" for="detect_helmet">
+                                        👷 Deteksi Helm
+                                    </label>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="form-check mb-3">
+                            <input class="form-check-input detection-toggle" type="checkbox" id="detect_custom" name="detect_custom">
+                            <label class="form-check-label" for="detect_custom">
+                                ⚙️ Deteksi Kustom
+                            </label>
+                        </div>
+                        
+                        <div class="form-group" id="customLabelGroup" style="display: none;">
+                            <label for="custom_label">Label Kustom</label>
+                            <input type="text" class="form-control" id="custom_label" name="custom_label" placeholder="Contoh: forklift, api">
+                        </div>
+                        
+                        <hr class="my-3">
+
+                        <h6 class="text-uppercase font-weight-bolder mb-2 d-flex justify-content-between">
+                            Status Master AI
+                            <span class="badge badge-lg" id="aiStatusBadge">INACTIVE</span>
+                        </h6>
+                        <small class="text-muted">Master AI akan **aktif** jika minimal satu deteksi di atas dipilih.</small>
+
+                        <div class="mt-4">
+                            <button type="submit" class="btn btn-success w-100" id="saveButton">
+                                <i class="fas fa-save mr-2"></i> Simpan Konfigurasi
+                            </button>
+                            <button type="button" class="btn btn-outline-danger w-100 mt-2" onclick="resetForm()">
+                                Reset Form
+                            </button>
+                        </div>
+                    </form>
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-8">
+            <div class="card shadow-sm">
+                <div class="card-header pb-0 bg-white border-bottom">
+                    <h6 class="mb-0 font-weight-bold text-gray-800"><i class="fas fa-database mr-2"></i> Konfigurasi Kamera Existing</h6>
+                </div>
+                <div class="card-body p-0">
+                    <div class="table-responsive-custom">
+                        <table class="table align-items-center mb-0 table-hover">
+                            <thead class="sticky-top bg-light">
+                                <tr>
+                                    <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">Kamera</th>
+                                    <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">Deteksi</th>
+                                    <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">Status AI</th>
+                                    <th class="text-uppercase text-secondary text-xxs font-weight-bolder opacity-7">RTSP URL</th>
+                                    <th class="text-secondary opacity-7">Aksi</th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                {% for site_id, site_data in structured_config_data.items() %}
+                                    
+                                    {% set site_collapse_id = 'site-' ~ site_id %}
+                                    
+                                    <tr class="collapse-toggle" data-toggle="collapse" data-target="#{{ site_collapse_id }}" aria-expanded="false" aria-controls="{{ site_collapse_id }}">
+                                        <td colspan="5" class="bg-gradient-light text-center font-weight-bold text-sm py-2">
+                                            <i class="fas fa-chevron-down collapse-icon mr-2 collapsed"></i> 
+                                            {{ site_data.site_name }}
+                                        </td>
+                                    </tr>
+
+                                    <tr id="{{ site_collapse_id }}" class="collapse">
+                                        <td colspan="5" class="p-0">
+                                            <table class="table align-items-center mb-0 table-borderless">
+                                                <tbody>
+                                                {% for ip_address, nvr_data in site_data.nvrs.items() %}
+                                                    {% set nvr_collapse_id = 'nvr-' ~ site_id ~ '-' ~ loop.index %}
+                                                    
+                                                    <tr class="collapse-toggle bg-gray-100" data-toggle="collapse" data-target="#{{ nvr_collapse_id }}" aria-expanded="false" aria-controls="{{ nvr_collapse_id }}">
+                                                        <td colspan="5" class="text-left font-weight-bold text-xs py-2 pl-4">
+                                                            <i class="fas fa-server mr-2"></i> 
+                                                            <i class="fas fa-chevron-down collapse-icon mr-2 collapsed"></i> 
+                                                            NVR/IP: {{ nvr_data.nvr_name }} ({{ ip_address }})
+                                                        </td>
+                                                    </tr>
+                                                    
+                                                    <tr id="{{ nvr_collapse_id }}" class="collapse">
+                                                        <td colspan="5" class="p-0">
+                                                            <table class="table align-items-center mb-0 table-borderless table-striped">
+                                                                <tbody>
+                                                                    {% for ch in nvr_data.channels %}
+                                                                    <tr data-config='{{ ch.ai_config | tojson }}' 
+                                                                        data-cam-id="{{ ch.id }}" 
+                                                                        data-cam-name="{{ ch.name }}" 
+                                                                        data-site-id="{{ site_id }}"
+                                                                        data-ip="{{ ch.ip_address }}"
+                                                                        class="camera-row">
+                                                                        
+                                                                        <td class="pl-5" style="width: 25%;">
+                                                                            <p class="text-xs font-weight-bold mb-0">{{ ch.name }}</p>
+                                                                            <p class="text-xs text-secondary mb-0">Ch: {{ ch.channel }}</p>
+                                                                        </td>
+                                                                        
+                                                                        <td style="width: 25%;">
+                                                                            {% if ch.ai_config and (ch.ai_config.detect_people or ch.ai_config.detect_helmet or ch.ai_config.detect_custom) %}
+                                                                                <span class="text-xs">{{ '👨‍' if ch.ai_config.detect_people else '' }}</span>
+                                                                                <span class="text-xs">{{ '👷' if ch.ai_config.detect_helmet else '' }}</span>
+                                                                                <span class="text-xs">{{ '⚙️' if ch.ai_config.detect_custom else '' }}</span>
+                                                                                {% if ch.ai_config.detect_custom %}
+                                                                                    <span class="text-xs text-muted">({{ ch.ai_config.custom_label|default('Custom', true) }})</span>
+                                                                                {% endif %}
+                                                                            {% else %}
+                                                                                <span class="text-xs text-muted">None</span>
+                                                                            {% endif %}
+                                                                        </td>
+                                                                        
+                                                                        <td style="width: 15%;">
+                                                                            {% if ch.is_configured and ch.ai_config.is_enabled %}
+                                                                                <span class="badge badge-sm bg-gradient-success">ACTIVE</span>
+                                                                            {% else %}
+                                                                                <span class="badge badge-sm bg-gradient-secondary">INACTIVE</span>
+                                                                            {% endif %}
+                                                                        </td>
+                                                                        
+                                                                        <td style="width: 25%;">
+                                                                            <p class="text-xs font-weight-bold mb-0 text-truncate" style="max-width: 200px;">
+                                                                                {{ ch.ai_config.rtsp_url|default('N/A', true) }}
+                                                                            </p>
+                                                                        </td>
+                                                                        
+                                                                        <td class="align-middle" style="width: 10%;">
+                                                                            <button class="btn btn-sm btn-info edit-btn" data-id="{{ ch.id }}">Edit</button>
+                                                                        </td>
+                                                                    </tr>
+                                                                    {% endfor %}
+                                                                </tbody>
+                                                            </table>
+                                                        </td>
+                                                    </tr>
+                                                {% endfor %}
+                                                </tbody>
+                                            </table>
+                                        </td>
+                                    </tr>
+                                {% else %}
+                                    <tr>
+                                        <td colspan="5" class="text-center text-muted py-4">Tidak ada kamera channel yang ditemukan di database.</td>
+                                    </tr>
+                                {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+{% endblock content %}
+
+{% block javascripts %}
+{{ super() }}
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+<script>
+    // Fungsi untuk memperbarui badge status AI
+    function updateAIStatusBadge() {
+        const people = $('#detect_people').prop('checked');
+        const helmet = $('#detect_helmet').prop('checked');
+        const custom = $('#detect_custom').prop('checked');
+        const badge = $('#aiStatusBadge');
+
+        const isActive = people || helmet || custom;
+
+        if (isActive) {
+            badge.text('ACTIVE').removeClass('badge-lg badge-secondary').addClass('badge-lg bg-gradient-success');
+        } else {
+            badge.text('INACTIVE').removeClass('badge-lg bg-gradient-success').addClass('badge-lg badge-secondary');
+        }
+    }
+
+    // Fungsi untuk mengaktifkan/menonaktifkan Custom Label
+    function toggleCustomLabel() {
+        if ($('#detect_custom').prop('checked')) {
+            $('#customLabelGroup').slideDown();
+        } else {
+            $('#customLabelGroup').slideUp();
+        }
+    }
+
+    // Fungsi untuk mereset formulir
+    function resetForm() {
+        $('#aiConfigForm')[0].reset();
+        $('#camera_id_input').val('');
+        $('#camera_name').val('');
+        $('#camera_name').prop('disabled', true);
+        $('#saveButton').text('Simpan Konfigurasi').removeClass('btn-warning').addClass('btn-success');
+        updateAIStatusBadge();
+        toggleCustomLabel();
+        $('.camera-row').removeClass('active');
+        $('#site_id').prop('disabled', false); 
+        
+        // Atur ulang badge ke INACTIVE
+        $('#aiStatusBadge').text('INACTIVE').removeClass('bg-gradient-success').addClass('badge-secondary');
+    }
+
+    // Fungsi untuk memuat data kamera ke dalam formulir
+    function loadConfigForEdit(cameraData, configData) {
+        // 1. Reset Form
+        resetForm();
+
+        // 2. Tandai baris tabel yang sedang di-edit
+        $(`tr[data-cam-id="${cameraData.id}"]`).addClass('active');
+
+        // 3. Isi Data Kamera
+        $('#camera_id_input').val(cameraData.id);
+        $('#camera_name').val(cameraData.name).prop('disabled', true); 
+        $('#site_id').val(cameraData.site_id).prop('disabled', false); 
+        $('#saveButton').text('Update Konfigurasi').removeClass('btn-success').addClass('btn-warning');
+
+        // 4. Isi Konfigurasi AI
+        if (configData) {
+            // Field RTSP
+            $('#rtsp_url').val(configData.rtsp_url || '');
+
+            // Field Deteksi
+            $('#detect_people').prop('checked', configData.detect_people);
+            $('#detect_helmet').prop('checked', configData.detect_helmet);
+            $('#detect_custom').prop('checked', configData.detect_custom);
+            
+            // Field Label Kustom
+            $('#custom_label').val(configData.custom_label || '');
+            
+            toggleCustomLabel(); // Tampilkan/sembunyikan input custom label
+        }
+        
+        // 5. Update Status AI
+        updateAIStatusBadge();
+    }
+
+    // --- EVENT LISTENERS ---
+    $(document).ready(function() {
+        // Event listener untuk checkbox deteksi
+        $('.detection-toggle').on('change', function() {
+            updateAIStatusBadge();
+            if ($(this).attr('id') === 'detect_custom') {
+                toggleCustomLabel();
+            }
+        });
+
+        // Event listener untuk tombol Edit
+        $('.edit-btn').on('click', function() {
+            const camRow = $(this).closest('.camera-row');
+            const camId = camRow.data('cam-id');
+            const camName = camRow.data('cam-name');
+            const siteId = camRow.data('site-id');
+            const configJson = camRow.data('config');
+            
+            // Perhatikan: Data yang disimpan di data-config adalah string JSON (jika ada config)
+            const configData = (typeof configJson === 'string') ? JSON.parse(configJson.replace(/'/g, '"')) : configJson;
+
+            loadConfigForEdit({id: camId, name: camName, site_id: siteId}, configData);
+            // Gulir ke formulir
+            $('html, body').animate({
+                scrollTop: $("#aiConfigForm").offset().top - 20 // 20px buffer
+            }, 500);
+        });
+        
+        // Event listener untuk Submit Formulir
+        $('#aiConfigForm').on('submit', function(e) {
+            e.preventDefault();
+            
+            const camId = $('#camera_id_input').val();
+            if (!camId) {
+                alert("Silakan pilih kamera dari daftar (tombol Edit) sebelum menyimpan.");
+                return;
+            }
+
+            const url = `/api/update_camera_config/${camId}`;
+            
+            // Kumpulkan data
+            const formData = {
+                site_id: $('#site_id').val(),
+                rtsp_url: $('#rtsp_url').val(),
+                detect_people: $('#detect_people').prop('checked'),
+                detect_helmet: $('#detect_helmet').prop('checked'),
+                detect_custom: $('#detect_custom').prop('checked'),
+                custom_label: $('#custom_label').val(),
+            };
+            
+            // Kirim data menggunakan AJAX
+            $.ajax({
+                url: url,
+                type: 'POST',
+                contentType: 'application/json',
+                data: JSON.stringify(formData),
+                success: function(response) {
+                    alert(response.message);
+                    window.location.reload(); // Muat ulang halaman untuk melihat perubahan
+                },
+                error: function(xhr) {
+                    const errorMsg = xhr.responseJSON ? xhr.responseJSON.message : "Terjadi kesalahan server.";
+                    alert("Gagal menyimpan konfigurasi: " + errorMsg);
+                }
+            });
+        });
+
+        // Event listener untuk ikon collapse (memutar ikon panah)
+        $('.collapse-toggle').on('click', function() {
+            const icon = $(this).find('.collapse-icon');
+            // Toggle kelas 'collapsed' pada ikon
+            icon.toggleClass('collapsed');
+        });
+
+        // Inisialisasi awal
+        resetForm();
+    });
+</script>
+{% endblock javascripts %}

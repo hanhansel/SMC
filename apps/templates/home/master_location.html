@@ -1,0 +1,284 @@
+{% extends "layouts/base.html" %}
+
+{% block title %} Master Location {% endblock %}
+
+{% block stylesheets %}
+<style>
+    /* CSS Custom untuk Efek Hover Galeri */
+    .master-gallery-card {
+        transition: transform 0.2s;
+        border-radius: 8px;
+        overflow: hidden;
+    }
+    .master-gallery-card:hover {
+        transform: translateY(-5px);
+        box-shadow: 0 10px 20px rgba(0,0,0,0.1);
+    }
+    .image-container {
+        position: relative;
+        width: 100%;
+        height: 220px;
+        background-color: #2c3e50; /* Fallback color */
+    }
+    .master-img {
+        width: 100%;
+        height: 100%;
+        object-fit: cover; /* Jaga rasio gambar */
+    }
+    .image-overlay {
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: rgba(0, 0, 0, 0.6);
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+        opacity: 0;
+        transition: opacity 0.3s ease;
+    }
+    /* Munculkan overlay hanya jika user punya akses Manage dan sedang di-hover */
+    {% if current_user.can_manage_master_location %}
+    .image-container:hover .image-overlay {
+        opacity: 1;
+    }
+    {% endif %}
+</style>
+{% endblock stylesheets %}
+
+{% block content %}
+<div class="row mb-3 align-items-center">
+    <div class="col-md-8">
+        <h4 class="mb-0"><i class="feather icon-image text-primary"></i> Master Location</h4>
+    </div>
+    <div class="col-md-4 text-right">
+        {% if current_user.can_manage_master_location %}
+        <button class="btn btn-primary shadow-sm" data-toggle="modal" data-target="#syncModal">
+            <i class="feather icon-refresh-cw"></i> Sync dari Report (Today)
+        </button>
+        {% endif %}
+    </div>
+</div>
+
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="form-group mb-0">
+            <label class="form-label font-weight-bold">Filter Site</label>
+            <select id="filterSite" class="form-control">
+                <option value="all">Semua Site</option>
+                {% for site in sites %}
+                <option value="site-{{ site.id }}">{{ site.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="form-group mb-0">
+            <label class="form-label font-weight-bold">Filter NVR</label>
+            <select id="filterNVR" class="form-control" disabled>
+                <option value="all">Semua NVR</option>
+                {% for nvr in nvrs %}
+                <option value="nvr-{{ nvr.ip_address }}" data-site="site-{{ nvr.site_id }}">{{ nvr.name }}</option>
+                {% endfor %}
+            </select>
+        </div>
+    </div>
+</div>
+
+{% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+        {% for category, message in messages %}
+            <div class="alert alert-{{ category }} alert-dismissible fade show shadow-sm" role="alert">
+                {{ message }}
+                <button type="button" class="close" data-dismiss="alert" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+        {% endfor %}
+    {% endif %}
+{% endwith %}
+
+<div class="row">
+    {% for camera in cameras %}
+    {% set current_stat = device_statuses[camera.id].status if camera.id in device_statuses else 'Unknown' %}
+    
+    <div class="col-xl-3 col-lg-4 col-md-6 mb-4 camera-item site-{{ camera.site_id }} nvr-{{ camera.ip_address }}">
+        <div class="card master-gallery-card h-100">
+            <div class="image-container">
+                
+                {% if current_stat == 'Available' %}
+                    <div class="d-flex justify-content-center align-items-center h-100 w-100" style="background-color: #e9ecef;">
+                        <div class="text-center text-info">
+                            <i class="feather icon-monitor" style="font-size: 3rem;"></i>
+                            <p class="mt-2 mb-0 font-weight-bold">Available Channel</p>
+                        </div>
+                    </div>
+                {% elif camera.master_location and camera.master_location.image_path %}
+                    <img src="/media/{{ camera.master_location.image_path }}" class="card-img-top" style="object-fit: cover; height: 200px;" alt="{{ camera.name }}">
+                {% else %}
+                    <div class="d-flex justify-content-center align-items-center h-100 w-100 bg-light">
+                        <div class="text-center text-muted">
+                            <i class="feather icon-camera-off" style="font-size: 3rem;"></i>
+                            <p class="mt-2 mb-0">Belum ada referensi</p>
+                        </div>
+                    </div>
+                {% endif %}
+
+                {% if current_user.can_manage_master_location and current_stat != 'Available' %}
+                <div class="image-overlay">
+                    <button class="btn btn-light btn-sm font-weight-bold" data-toggle="modal" data-target="#uploadModal{{ camera.id }}">
+                        <i class="feather icon-upload"></i> Upload / Ganti Foto
+                    </button>
+                </div>
+                {% endif %}
+            </div>
+
+            <div class="card-body p-3">
+                <h6 class="mb-1 font-weight-bold text-truncate" title="{{ camera.name }}">{{ camera.name }}</h6>
+                <p class="text-muted mb-2" style="font-size: 0.85rem;"><i class="feather icon-map-pin"></i> {{ camera.site.name }}</p>
+                
+                <div class="d-flex justify-content-between align-items-center mt-2 border-top pt-2">
+                    <small class="text-muted">
+                        {% if current_stat == 'Available' %}
+                            <span class="text-info font-weight-bold">Channel Idle</span>
+                        {% elif camera.master_location %}
+                            Diperbarui: {{ camera.master_location.last_updated.strftime('%d %b %Y') }}
+                        {% else %}
+                            <span class="text-danger">Butuh Update</span>
+                        {% endif %}
+                    </small>
+                    
+                    {% if current_stat == 'Online' %}
+                        <span class="badge badge-success" title="Siap ditarik dari hasil Wifiman">Ready to Sync</span>
+                    {% endif %}
+                </div>
+            </div>
+        </div>
+    </div>
+
+    {% if current_user.can_manage_master_location %}
+    <div class="modal fade" id="uploadModal{{ camera.id }}" tabindex="-1" role="dialog" aria-hidden="true">
+        <div class="modal-dialog" role="document">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title">Upload Manual: {{ camera.name }}</h5>
+                    <button type="button" class="close" data-dismiss="modal" aria-label="Close">
+                        <span aria-hidden="true">&times;</span>
+                    </button>
+                </div>
+                <form action="{{ url_for('home_blueprint.upload_master_location', camera_id=camera.id) }}" method="POST" enctype="multipart/form-data">
+                    <div class="modal-body">
+                        <p class="text-muted">Unggah foto referensi manual untuk menimpa gambar yang ada.</p>
+                        <div class="custom-file">
+                            <input type="file" class="custom-file-input" id="customFile{{ camera.id }}" name="file" accept=".jpg, .jpeg, .png" required>
+                            <label class="custom-file-label" for="customFile{{ camera.id }}">Pilih file gambar...</label>
+                        </div>
+                    </div>
+                    <div class="modal-footer">
+                        <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                        <button type="submit" class="btn btn-primary">Upload & Simpan</button>
+                    </div>
+                </form>
+            </div>
+        </div>
+    </div>
+    {% endif %}
+    {% endfor %}
+
+    {% if not cameras %}
+    <div class="col-12 text-center mt-5">
+        <h5 class="text-muted">Belum ada kamera yang didaftarkan.</h5>
+    </div>
+    {% endif %}
+</div>
+
+{% if current_user.can_manage_master_location %}
+<div class="modal fade" id="syncModal" tabindex="-1" role="dialog" aria-hidden="true">
+    <div class="modal-dialog" role="document">
+        <div class="modal-content border-primary">
+            <div class="modal-header bg-primary text-white">
+                <h5 class="modal-title text-white"><i class="feather icon-info"></i> Konfirmasi Sinkronisasi Massal</h5>
+                <button type="button" class="close text-white" data-dismiss="modal" aria-label="Close">
+                    <span aria-hidden="true">&times;</span>
+                </button>
+            </div>
+            <form action="{{ url_for('home_blueprint.sync_master_location') }}" method="POST">
+                <div class="modal-body">
+                    <p>Sistem akan mengambil <strong>Screenshot Terbaru</strong> dari hasil tarikan Wifiman (Update Manual) dan menguncinya sebagai Master Location.</p>
+                    <div class="alert alert-warning mb-0">
+                        <strong>Perhatian:</strong><br>
+                        - Hanya kamera berstatus <strong>Online</strong> yang akan ditarik gambarnya.<br>
+                        - Kamera yang Offline akan dilewati (gambar Master lamanya tidak akan hilang).
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-dismiss="modal">Batal</button>
+                    <button type="submit" class="btn btn-primary"><i class="feather icon-refresh-cw"></i> Ya, Sync Sekarang</button>
+                </div>
+            </form>
+        </div>
+    </div>
+</div>
+{% endif %}
+
+{% endblock content %}
+
+{% block javascripts %}
+<script>
+    // Script agar nama file muncul setelah di-select (Custom File Input Bootstrap)
+    $('.custom-file-input').on('change', function() {
+        let fileName = $(this).val().split('\\').pop();
+        $(this).next('.custom-file-label').addClass("selected").html(fileName);
+    });
+</script>
+
+<script>
+document.addEventListener('DOMContentLoaded', function() {
+    const filterSite = document.getElementById('filterSite');
+    const filterNVR = document.getElementById('filterNVR');
+    const cameraItems = document.querySelectorAll('.camera-item');
+    const nvrOptions = filterNVR.querySelectorAll('option');
+
+    function applyFilter() {
+        const selectedSite = filterSite.value;
+        const selectedNVR = filterNVR.value;
+
+        cameraItems.forEach(item => {
+            const matchSite = (selectedSite === 'all' || item.classList.contains(selectedSite));
+            const matchNVR = (selectedNVR === 'all' || item.classList.contains(selectedNVR));
+
+            if (matchSite && matchNVR) {
+                item.style.display = 'block';
+            } else {
+                item.style.display = 'none';
+            }
+        });
+    }
+
+    filterSite.addEventListener('change', function() {
+        const siteId = this.value;
+        
+        // Reset NVR dropdown
+        filterNVR.value = 'all';
+        
+        if (siteId === 'all') {
+            filterNVR.disabled = true;
+        } else {
+            filterNVR.disabled = false;
+            // Sembunyikan NVR yang bukan milik site yang dipilih
+            nvrOptions.forEach(opt => {
+                if (opt.value === 'all') {
+                    opt.style.display = 'block';
+                } else if (opt.getAttribute('data-site') === siteId) {
+                    opt.style.display = 'block';
+                } else {
+                    opt.style.display = 'none';
+                }
+            });
+        }
+        applyFilter();
+    });
+
+    filterNVR.addEventListener('change', applyFilter);
+});
+</script>
+{% endblock javascripts %}
